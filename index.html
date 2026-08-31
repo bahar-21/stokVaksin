@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VaxTrack Cloud - Date Fixed Final</title>
+    <title>VaxTrack Cloud - Stock Focus</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#059669">
@@ -20,15 +20,66 @@
         const { useState, useEffect, useRef } = React;
 
         // ==========================================
-        // KONFIGURASI: TEMPEL URL GOOGLE SCRIPT ANDA DI SINI
+        // KONFIGURASI
         const GAS_URL = "https://script.google.com/macros/s/AKfycbzYRWtMss4mafbjt9jYTcVi38x6vuJR6Izs2EC1qZPkTOSRuMXlPNwjWuE-09t5nMOJ/exec"; 
+        const SYNC_INTERVAL = 30000; 
         // ==========================================
 
-        const LayoutDashboard = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>);
+        // ==========================================
+        // INDEXED DB WRAPPER
+        // ==========================================
+        const dbName = "VaxTrackDB";
+        const storeNames = ["master", "transactions"];
+
+        const initDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName, 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    storeNames.forEach(name => {
+                        if (!db.objectStoreNames.contains(name)) {
+                            db.createObjectStore(name, { keyPath: "id" });
+                        }
+                    });
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject("IndexedDB Error");
+            });
+        };
+
+        const dbOp = async (storeName, mode, operation) => {
+            const db = await initDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, mode);
+                const store = tx.objectStore(storeName);
+                const request = operation(store);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        };
+
+        const saveToLocal = async (storeName, data) => {
+            if (Array.isArray(data)) {
+                for (const item of data) {
+                    await dbOp(storeName, "readwrite", s => s.put(item));
+                }
+            } else {
+                await dbOp(storeName, "readwrite", s => s.put(data));
+            }
+        };
+
+        const getFromLocal = async (storeName) => {
+            return new Promise((resolve) => {
+                dbOp(storeName, "readonly", s => s.getAll()).then(resolve);
+            });
+        };
+
+        // ==========================================
+        // ICONS
+        // ==========================================
         const Package = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>);
         const ArrowLeftRight = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>);
         const PlusCircle = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>);
-        const AlertTriangle = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>);
         const Search = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>);
         const TrendingUp = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>);
         const TrendingDown = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>);
@@ -37,56 +88,42 @@
         const X = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>);
         const ChevronDown = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>);
         const ChevronUp = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>);
-        const Edit3 = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1219430786797687 0 0 1 0 4.242548672 2.1219430786797687 0 0 0 0-4.242548672z"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>);
         const FileUp = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>);
         const FileDown = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>);
         const RefreshCcw = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-9 9Z"/><path d="M12 12v4"/><path d="m16 16-4 4-4-4"/></svg>);
+        const AlertCircle = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>);
 
         function App() {
-            const [activeTab, setActiveTab] = useState('dashboard');
+            const [activeTab, setActiveTab] = useState('stock');
             const [toast, setToast] = useState(null);
-            const [confirmModal, setConfirmModal] = useState(null);
             const [isSyncing, setIsSyncing] = useState(false);
             const fileInputRef = useRef(null);
 
-            const [vaccines, setVaccines] = useState(() => {
-                const saved = localStorage.getItem('vax_master_v2');
-                return saved ? JSON.parse(saved) : [];
-            });
-
-            const [transactions, setTransactions] = useState(() => {
-                const saved = localStorage.getItem('vax_tx_v2');
-                return saved ? JSON.parse(saved) : [];
-            });
+            const [vaccines, setVaccines] = useState([]);
+            const [transactions, setTransactions] = useState([]);
 
             const [isTxModalOpen, setIsTxModalOpen] = useState(false);
             const [isVaxModalOpen, setIsVaxModalOpen] = useState(false);
-            const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-            const [isEditTxModalOpen, setIsEditTxModalOpen] = useState(false);
             const [isCsvPreviewOpen, setIsCsvPreviewOpen] = useState(false);
             const [expandedVaxId, setExpandedVaxId] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
             const [filterType, setFilterType] = useState('all');
 
             const [vaxForm, setVaxForm] = useState({ name: '', category: 'Vaksin Wajib', minStock: 10 });
-            const [editVax, setEditVax] = useState(null);
-            const [editTx, setEditTx] = useState(null);
             const [csvPreviewItems, setCsvPreviewItems] = useState([]);
             const [txType, setTxType] = useState('masuk');
             const [txHeader, setTxHeader] = useState({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
             const [txItems, setTxItems] = useState([{}]);
 
-            // SUPER DATE FORMATTER: Memastikan tanggal selalu YYYY-MM-DD
+            const showToast = (message, type = 'error') => {
+                setToast({ message, type });
+                setTimeout(() => setToast(null), 4000);
+            };
+
             const superFormatDate = (dateVal) => {
                 if (!dateVal) return '';
-                
-                // Jika sudah format YYYY-MM-DD, kembalikan langsung
-                if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
-                    return dateVal;
-                }
-
+                if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) return dateVal;
                 try {
-                    // Coba handle format DD/MM/YYYY atau DD-MM-YYYY
                     if (typeof dateVal === 'string') {
                         const parts = dateVal.split(/[\/\-]/);
                         if (parts.length === 3 && parts[0].length <= 2) {
@@ -96,26 +133,62 @@
                             return `${year}-${month}-${day}`;
                         }
                     }
-
-                    // Coba parse dengan Date object (menangani format ISO dan Google Sheets)
                     const d = new Date(dateVal);
-                    if (isNaN(d.getTime())) return dateVal; // Jika gagal, kembalikan asli
-                    
+                    if (isNaN(d.getTime())) return dateVal;
                     return d.toISOString().split('T')[0];
+                } catch (e) { return dateVal; }
+            };
+
+            // ==========================================
+            // SYNC ENGINE
+            // ==========================================
+            const syncFromCloud = async (silent = false) => {
+                setIsSyncing(true);
+                try {
+                    const resMaster = await fetch(`${GAS_URL}?sheet=Master`);
+                    const dataMaster = await resMaster.json();
+                    const masterFormatted = dataMaster.map(item => ({
+                        id: item.idvaksin, name: item.namavaksin, category: item.kategori, minStock: Number(item.batasminimum)
+                    }));
+                    await saveToLocal("master", masterFormatted);
+                    setVaccines(masterFormatted);
+
+                    const resMasuk = await fetch(`${GAS_URL}?sheet=Masuk`);
+                    const dataMasuk = await resMasuk.json();
+                    const masukFormatted = dataMasuk.map(item => ({
+                        id: item.idtransaksi || `TX-M-${Math.random()}`,
+                        vaccineId: item.namavaksin, vaccineName: item.namavaksin, type: 'masuk',
+                        date: superFormatDate(item.tanggal), sourceOrFor: item.sumber,
+                        lotId: item.idmasuk || item.lotid, 
+                        producer: item.merk || '-', batchNo: item.nobatch || '-',
+                        expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
+                        qty: Number(item.jumlah), notes: ''
+                    }));
+
+                    const resKeluar = await fetch(`${GAS_URL}?sheet=Keluar`);
+                    const dataKeluar = await resKeluar.json();
+                    const keluarFormatted = dataKeluar.map(item => ({
+                        id: item.idtransaksi || `TX-K-${Math.random()}`,
+                        vaccineId: item.namavaksin, vaccineName: item.namavaksin, type: 'keluar',
+                        date: superFormatDate(item.tanggal), sourceOrFor: item.peruntukan,
+                        lotId: item.lotid, 
+                        producer: item.merk || '-', batchNo: item.nobatch || '-',
+                        expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
+                        qty: Number(item.jumlah), notes: ''
+                    }));
+
+                    const allTxs = [...masukFormatted, ...keluarFormatted];
+                    await saveToLocal("transactions", allTxs);
+                    setTransactions(allTxs);
+
+                    if (!silent) showToast('Data sinkron dengan Cloud!', 'success');
                 } catch (e) {
-                    return dateVal;
+                    if (!silent) showToast('Gagal sinkronisasi Cloud', 'error');
                 }
+                setIsSyncing(false);
             };
 
-            const showToast = (message, type = 'error') => {
-                setToast({ message, type });
-                setTimeout(() => setToast(null), 4000);
-            };
-
-            useEffect(() => { localStorage.setItem('vax_master_v2', JSON.stringify(vaccines)); }, [vaccines]);
-            useEffect(() => { localStorage.setItem('vax_tx_v2', JSON.stringify(transactions)); }, [transactions]);
-
-            const syncToSheet = async (payload) => {
+            const syncToCloud = async (payload) => {
                 try {
                     await fetch(GAS_URL, {
                         method: 'POST',
@@ -123,210 +196,113 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-                } catch (e) { console.error("Sync Error:", e); }
+                } catch (e) { console.error("Cloud Sync Error:", e); }
             };
 
-            const restoreFromSheet = async (sheetName) => {
-    setIsSyncing(true);
-    try {
-        const response = await fetch(`${GAS_URL}?sheet=${sheetName}`);
-        const data = await response.json();
-        if (sheetName === 'Master') {
-            const restoredMaster = data.map(item => ({
-                id: item.idvaksin, name: item.namavaksin, category: item.kategori, minStock: Number(item.batasminimum)
-            }));
-            setVaccines(restoredMaster);
-            showToast('Master Vaksin dimuat ulang!', 'success');
-        } else if (sheetName === 'Masuk' || sheetName === 'Keluar') {
-            const restoredTxs = data.map(item => {
-                // PERBAIKAN: Mencoba berbagai kemungkinan nama kolom Batch
-                const batchValue = item.nobatch || item.noBatch || item.NoBatch || item['No Batch'] || '-';
-                const producerValue = item.merk || item.producer || item.Merk || item['Merk'] || '-';
-                
-                return {
-                    id: item.idtransaksi || `TX-REST-${Math.random()}`,
-                    vaccineId: item.namavaksin, vaccineName: item.namavaksin, type: sheetName === 'Masuk' ? 'masuk' : 'keluar',
-                    date: superFormatDate(item.tanggal), sourceOrFor: item.sumber || item.peruntukan,
-                    lotId: item.idmasuk || item.lotid, 
-                    producer: producerValue, 
-                    batchNo: batchValue, 
-                    expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
-                    qty: Number(item.jumlah), notes: 'Restored from Sheet'
+            useEffect(() => {
+                const loadInitialData = async () => {
+                    const localMaster = await getFromLocal("master");
+                    const localTxs = await getFromLocal("transactions");
+                    if (localMaster.length === 0 || localTxs.length === 0) {
+                        await syncFromCloud();
+                    } else {
+                        setVaccines(localMaster);
+                        setTransactions(localTxs);
+                        syncFromCloud(true); 
+                    }
                 };
-            });
-            // Menggunakan spread operator agar data lama tidak hilang sepenuhnya jika diinginkan, 
-            // atau ganti menjadi setTransactions(restoredTxs) untuk sinkronisasi total.
-            setTransactions([...restoredTxs, ...transactions]);
-            showToast(`Data ${sheetName} dimuat ulang!`, 'success');
-        }
-    } catch (e) { showToast('Gagal mengambil data dari Google Sheet', 'error'); }
-    setIsSyncing(false);
-};
-
-
+                loadInitialData();
+                }, []);
+                
+            // ==========================================
+            // STOCK CALCULATION (Dosis & Satuan)
+            // ==========================================
             const getCalculatedStock = () => {
                 const today = new Date();
                 return vaccines.map((vax) => {
                     const vaxTxs = transactions.filter(t => t.vaccineId === vax.id || t.vaccineName === vax.name);
                     const lotMap = {};
+                    
                     vaxTxs.forEach((tx) => {
                         const key = tx.lotId;
-                        if (!lotMap[key]) lotMap[key] = { lotId: key, batchNo: tx.batchNo, expireDate: tx.expireDate, producer: tx.producer, masuk: 0, keluar: 0, currentStock: 0 };
+                        if (!lotMap[key]) {
+                            lotMap[key] = { 
+                                lotId: key, batchNo: tx.batchNo, expireDate: tx.expireDate, producer: tx.producer, 
+                                unitName: tx.unit || 'unit', dosePerUnit: parseFloat(tx.dose) || 1,
+                                masuk: 0, keluar: 0, currentUnits: 0, currentDoses: 0 
+                            };
+                        }
                         if (tx.type === 'masuk') lotMap[key].masuk += Number(tx.qty);
                         else lotMap[key].keluar += Number(tx.qty);
-                        lotMap[key].currentStock = lotMap[key].masuk - lotMap[key].keluar;
+                        
+                        lotMap[key].currentUnits = lotMap[key].masuk - lotMap[key].keluar;
+                        lotMap[key].currentDoses = lotMap[key].currentUnits * lotMap[key].dosePerUnit;
                     });
-                    const lots = Object.values(lotMap).filter(l => l.masuk > 0).sort((a, b) => new Date(a.expireDate) - new Date(b.expireDate));
-                    const currentStock = lots.reduce((sum, l) => sum + l.currentStock, 0);
-                    const nearExpLots = lots.filter(l => {
-                        if (l.currentStock <= 0) return false;
-                        return Math.ceil((new Date(l.expireDate) - today) / 86400000) <= 30;
-                    });
-                    return { ...vax, lots, currentStock, isLowStock: currentStock <= vax.minStock, nearExpLots };
+
+                    const lots = Object.values(lotMap)
+                        .filter(l => l.masuk > 0)
+                        .sort((a, b) => new Date(a.expireDate) - new Date(b.expireDate));
+
+                    const totalUnits = lots.reduce((sum, l) => sum + l.currentUnits, 0);
+                    const totalDoses = lots.reduce((sum, l) => sum + l.currentDoses, 0);
+                    
+                    return { 
+                        ...vax, 
+                        lots, 
+                        totalUnits, 
+                        totalDoses, 
+                        isLowStock: totalDoses <= vax.minStock, 
+                        nearExpLots: lots.filter(l => l.currentUnits > 0 && Math.ceil((new Date(l.expireDate) - today) / 86400000) <= 30)
+                    };
                 });
             };
 
             const calculatedStock = getCalculatedStock();
 
-            const handleAddVaccine = async (e) => {
-                e.preventDefault();
-                if (!vaxForm.name) return;
-                const newVax = { id: 'V-' + Date.now(), name: vaxForm.name, category: vaxForm.category, minStock: Number(vaxForm.minStock) };
-                setVaccines([...vaccines, newVax]);
-                await syncToSheet({ action: 'addMaster', ...newVax });
-                setIsVaxModalOpen(false);
-                setVaxForm({ name: '', category: 'Vaksin Wajib', minStock: 10 });
-                showToast('Jenis vaksin disimpan!', 'success');
+            // ==========================================
+            // EXPIRED LOTS LIST
+            // ==========================================
+            const getExpiredList = () => {
+                const today = new Date();
+                const allExp = [];
+                calculatedStock.forEach(vax => {
+                    vax.lots.forEach(lot => {
+                        const diff = Math.ceil((new Date(lot.expireDate) - today) / 86400000);
+                        if (diff <= 30 && lot.currentUnits > 0) {
+                            allExp.push({ ...lot, vaxName: vax.name, daysLeft: diff });
+                        }
+                    });
+                });
+                return allExp.sort((a, b) => new Date(a.expireDate) - new Date(b.expireDate));
             };
 
-            const handleUpdateVaccine = async (e) => {
-                e.preventDefault();
-                const updatedVax = { ...editVax };
-                setVaccines(vaccines.map(v => v.id === updatedVax.id ? updatedVax : v));
-                await syncToSheet({ action: 'editMaster', id: updatedVax.id, category: updatedVax.category, minStock: updatedVax.minStock });
-                setIsEditModalOpen(false);
-                setEditVax(null);
-                showToast('Batas minimum stok diperbarui!', 'success');
-            };
+            const expiredLots = getExpiredList();
 
+            // ==========================================
+            // LOT ID GENERATOR
+            // ==========================================
             const generateSmartLotId = (vaccine, batchNo, date, currentSessionIds) => {
-    // 1. Buat prefix yang bersih (Contoh: "Vaksin BCG" -> "bcg")
-    const vaxNameShort = vaccine.name.toLowerCase()
-        .replace(/\s+/g, '') 
-        .replace(/vaksin/g, '') 
-        .trim();
-    
-    // 2. Cek apakah Lot dengan Batch, Tanggal, dan Vaksin yang sama sudah ada (agar tidak duplikat)
-    const existingLot = transactions.find(t => 
-        (t.vaccineId === vaccine.id || t.vaccineName === vaccine.name) && 
-        t.batchNo === batchNo && 
-        t.date === date && 
-        t.type === 'masuk'
-    );
-    if (existingLot) return existingLot.lotId;
-
-    // 3. FILTER KETAT: Hanya ambil ID yang dimulai dengan prefix vaksin ini
-    // Contoh: Jika vaxNameShort adalah 'bcg', maka 'opv1' akan diabaikan.
-    const usedIdsForThisVax = [
-        ...transactions
-            .filter(t => t.type === 'masuk' && t.lotId && t.lotId.toLowerCase().startsWith(vaxNameShort))
-            .map(t => t.lotId), 
-        ...currentSessionIds.filter(id => id.toLowerCase().startsWith(vaxNameShort))
-    ];
-
-    let maxNumber = 0;
-    usedIdsForThisVax.forEach(id => {
-        // Ambil angka di akhir string
-        const match = id.match(/\d+$/); 
-        if (match) {
-            const num = parseInt(match[0], 10);
-            if (num > maxNumber) maxNumber = num;
-        }
-    });
-
-    // 4. Hasil akhir: prefix + (angka tertinggi vaksin tersebut + 1)
-    return `${vaxNameShort}${maxNumber + 1}`;
-};
-
-
-
-            const handleSaveTransactions = async (e) => {
-    e.preventDefault();
-    if (!txHeader.date || !txHeader.sourceOrFor) {
-        showToast('Tanggal dan Sumber/Peruntukan harus diisi!');
-        return;
-    }
-    setIsSyncing(true);
-    const newTxs = [];
-    const currentSessionIds = [];
-    for (let item of txItems) {
-        if (!item.vaccineId || !item.qty) continue;
-        const vax = vaccines.find(v => v.id === item.vaccineId);
-        let lotId, producer = '-', batchNo = '-', expireDate = '-';
-        
-        if (txType === 'masuk') {
-            lotId = generateSmartLotId(vax, item.batchNo, txHeader.date, currentSessionIds);
-            currentSessionIds.push(lotId);
-            producer = item.producer || '-'; 
-            batchNo = item.batchNo || '-'; 
-            expireDate = item.expireDate || '-';
-        } else {
-            lotId = item.lotId;
-            // PERBAIKAN: Mencari di data transaksi lokal untuk mendapatkan info batch
-            const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
-            if (sourceTx) { 
-                producer = sourceTx.producer; 
-                batchNo = sourceTx.batchNo; 
-                expireDate = sourceTx.expireDate; 
-            } else {
-                // Jika tidak ditemukan di lokal, kita beri tanda agar user tahu data batch tidak tersedia
-                batchNo = "TIDAK DITEMUKAN"; 
-            }
-        }
-        const transactionData = {
-            id: `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            vaccineId: item.vaccineId, vaccineName: vax ? vax.name : 'Unknown',
-            type: txType, date: txHeader.date, sourceOrFor: txHeader.sourceOrFor,
-            lotId: lotId, producer: producer, batchNo: batchNo, expireDate: expireDate,
-            dose: item.dose || '-', unit: item.unit || 'dosis', qty: Number(item.qty), notes: item.notes || ''
-        };
-        newTxs.push(transactionData);
-        await syncToSheet(transactionData);
-    }
-    if (newTxs.length === 0) { setIsSyncing(false); showToast('Mohon isi minimal satu jenis vaksin!'); return; }
-    setTransactions([...newTxs, ...transactions]);
-    setIsTxModalOpen(false);
-    setTxItems([{}]);
-    setTxHeader({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
-    setIsSyncing(false);
-    showToast('Berhasil disimpan & Sync Cloud!', 'success');
-};
-
-
-            const handleUpdateTx = async (e) => {
-                e.preventDefault();
-                const updatedTx = { ...editTx };
-                setTransactions(transactions.map(t => t.id === updatedTx.id ? updatedTx : t));
-                await syncToSheet({ action: 'editTx', ...updatedTx });
-                setIsEditTxModalOpen(false);
-                setEditTx(null);
-                showToast('Transaksi berhasil diperbarui!', 'success');
-            };
-
-            const handleDeleteTx = (id) => {
-                setConfirmModal({
-                    message: 'Hapus transaksi ini dari lokal?',
-                    onConfirm: () => {
-                        setTransactions(transactions.filter(t => t.id !== id));
-                        setConfirmModal(null);
-                        showToast('Dihapus dari lokal', 'success');
+                const vaxNameShort = vaccine.name.toLowerCase().replace(/\s+/g, '').replace(/vaksin/g, '').trim();
+                const existingLot = transactions.find(t => (t.vaccineId === vaccine.id || t.vaccineName === vaccine.name) && t.batchNo === batchNo && t.date === date && t.type === 'masuk');
+                if (existingLot) return existingLot.lotId;
+                const usedIdsForThisVax = [...transactions.filter(t => t.type === 'masuk' && t.lotId && t.lotId.toLowerCase().startsWith(vaxNameShort)).map(t => t.lotId), ...currentSessionIds.filter(id => id.toLowerCase().startsWith(vaxNameShort))];
+                let maxNumber = 0;
+                usedIdsForThisVax.forEach(id => {
+                    const match = id.match(/\d+$/);
+                    if (match) {
+                        const num = parseInt(match[0], 10);
+                        if (num > maxNumber) maxNumber = num;
                     }
                 });
+                return `${vaxNameShort}${maxNumber + 1}`;
             };
 
+            // ==========================================
+            // CSV FEATURES
+            // ==========================================
             const downloadTemplate = () => {
                 const headers = "Tanggal Masuk,Sumber,Nama Vaksin,Merk,No Batch,Kadaluarsa(YYYY-MM-DD),Dosis,Satuan,Jumlah\n";
-                const example = "2023-10-27,Dinkes Kota,BCG,Bio Farma,BCG2026A,2026-12-31,0.05ml,dosis,100\n";
+                const example = "2023-10-27,Dinkes Kota,BCG,Bio Farma,BCG2026A,2026-12-31,20,Vial,5\n";
                 const blob = new Blob([headers + example], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement("a");
                 const url = URL.createObjectURL(blob);
@@ -374,20 +350,76 @@
                     const lotId = generateSmartLotId(vax, item.batchNo, item.date, currentSessionIds);
                     currentSessionIds.push(lotId);
                     const transactionData = {
-                        id: `TX-CSV-${Date.now()}-${item.tempId}`,
-                        vaccineId: vax.id, vaccineName: vax.name, type: 'masuk',
+                        id: `TX-CSV-${Date.now()}-${item.tempId}`, vaccineId: vax.id, vaccineName: vax.name, type: 'masuk',
                         date: item.date, sourceOrFor: item.source, lotId: lotId,
                         producer: item.producer, batchNo: item.batchNo, expireDate: item.expireDate,
                         dose: item.dose, unit: item.unit, qty: Number(item.qty), notes: 'Imported via CSV'
                     };
+                    await syncToCloud(transactionData);
                     newTxs.push(transactionData);
-                    await syncToSheet(transactionData);
                 }
-                if (newTxs.length > 0) setTransactions([...newTxs, ...transactions]);
+                if (newTxs.length > 0) {
+                    await saveToLocal("transactions", newTxs);
+                    setTransactions([...newTxs, ...transactions]);
+                }
                 setIsCsvPreviewOpen(false);
                 setIsSyncing(false);
                 if (errorCount > 0) showToast(`${errorCount} vaksin tidak ditemukan di Master`, 'error');
                 showToast(`Berhasil mengimpor ${newTxs.length} data!`, 'success');
+            };
+
+            const handleAddVaccine = async (e) => {
+                e.preventDefault();
+                if (!vaxForm.name) return;
+                const newVax = { id: 'V-' + Date.now(), name: vaxForm.name, category: vaxForm.category, minStock: Number(vaxForm.minStock) };
+                await syncToCloud({ action: 'addMaster', ...newVax });
+                await saveToLocal("master", newVax);
+                setVaccines([...vaccines, newVax]);
+                setIsVaxModalOpen(false);
+                setVaxForm({ name: '', category: 'Vaksin Wajib', minStock: 10 });
+                showToast('Jenis vaksin disimpan!', 'success');
+            };
+
+            const handleSaveTransactions = async (e) => {
+                e.preventDefault();
+                if (!txHeader.date || !txHeader.sourceOrFor) {
+                    showToast('Tanggal dan Sumber/Peruntukan harus diisi!');
+                    return;
+                }
+                setIsSyncing(true);
+                const newTxs = [];
+                const currentSessionIds = [];
+                for (let item of txItems) {
+                    if (!item.vaccineId || !item.qty) continue;
+                    const vax = vaccines.find(v => v.id === item.vaccineId);
+                    let lotId, producer = '-', batchNo = '-', expireDate = '-';
+                    if (txType === 'masuk') {
+                        lotId = generateSmartLotId(vax, item.batchNo, txHeader.date, currentSessionIds);
+                        currentSessionIds.push(lotId);
+                        producer = item.producer || '-'; batchNo = item.batchNo || '-'; expireDate = item.expireDate || '-';
+                    } else {
+                        lotId = item.lotId;
+                        const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
+                        if (sourceTx) { producer = sourceTx.producer; batchNo = sourceTx.batchNo; expireDate = sourceTx.expireDate; }
+                    }
+                    const transactionData = {
+                        id: `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                        vaccineId: item.vaccineId, vaccineName: vax ? vax.name : 'Unknown',
+                        type: txType, date: txHeader.date, sourceOrFor: txHeader.sourceOrFor,
+                        lotId: lotId, producer: producer, batchNo: batchNo, expireDate: expireDate,
+                        dose: item.dose || '-', unit: item.unit || 'dosis', qty: Number(item.qty), notes: item.notes || ''
+                    };
+                    newTxs.push(transactionData);
+                    await syncToCloud(transactionData);
+                }
+                if (newTxs.length === 0) { setIsSyncing(false); showToast('Mohon isi minimal satu jenis vaksin!'); return; }
+                await saveToLocal("transactions", newTxs);
+                setTransactions([...newTxs, ...transactions]);
+                setIsTxModalOpen(false);
+                setTxItems([{}]);
+                setTxHeader({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
+                setIsSyncing(false);
+                showToast('Berhasil disimpan & Sync Cloud!', 'success');
             };
 
             const filteredStock = calculatedStock.filter(v => 
@@ -401,9 +433,14 @@
                         <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
                             <div className="flex items-center space-x-3">
                                 <div className="bg-white/20 p-2 rounded-xl"><Syringe className="w-6 h-6 text-white" /></div>
-                                <div>
-                                    <h1 className="font-bold text-lg leading-tight">VaxTrack Cloud</h1>
-                                    <p className="text-xs text-emerald-100">Full Date Formatting Enabled</p>
+                                <div className="flex items-center space-x-3">
+                                    <div>
+                                        <h1 className="font-bold text-lg leading-tight">VaxTrack Cloud</h1>
+                                        <p className="text-xs text-emerald-100">{isSyncing ? 'Syncing...' : 'IndexedDB Active'}</p>
+                                    </div>
+                                    <button onClick={() => syncFromCloud()} disabled={isSyncing} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition">
+                                        <RefreshCcw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                    </button>
                                 </div>
                             </div>
                             <button onClick={() => setIsTxModalOpen(true)} className="hidden sm:flex items-center space-x-2 bg-white text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-xl font-medium text-sm shadow transition">
@@ -415,61 +452,17 @@
 
                     {toast && <div className={`fixed top-16 right-4 z-50 p-4 rounded-xl shadow-xl text-white text-xs font-semibold ${toast.type === 'error' ? 'bg-rose-600' : 'bg-emerald-600'}`}>{toast.message}</div>}
 
-                    {confirmModal && (
-                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                            <div className="bg-white rounded-2xl p-5 max-w-xs w-full shadow-2xl space-y-4 text-center">
-                                <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
-                                <p className="text-sm font-semibold text-slate-700">{confirmModal.message}</p>
-                                <div className="flex space-x-2">
-                                    <button onClick={() => setConfirmModal(null)} className="flex-1 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-xl">Batal</button>
-                                    <button onClick={confirmModal.onConfirm} className="flex-1 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl shadow">Hapus</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     <main className="max-w-6xl mx-auto px-4 pt-4">
                         <div className="hidden md:flex space-x-2 mb-6 border-b border-slate-200 pb-2">
-                            {['dashboard', 'stock', 'transactions', 'system'].map(tab => (
+                            {['stock', 'transactions', 'expired'].map(tab => (
                                 <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition ${activeTab === tab ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
-                                    {tab === 'dashboard' && <LayoutDashboard className="w-4 h-4" />}
                                     {tab === 'stock' && <Package className="w-4 h-4" />}
                                     {tab === 'transactions' && <ArrowLeftRight className="w-4 h-4" />}
-                                    {tab === 'system' && <RefreshCcw className="w-4 h-4" />}
-                                    <span className="capitalize">{tab}</span>
+                                    {tab === 'expired' && <AlertCircle className="w-4 h-4" />}
+                                    <span className="capitalize">{tab === 'expired' ? 'Lot Kadaluarsa' : tab}</span>
                                 </button>
                             ))}
                         </div>
-
-                        {activeTab === 'dashboard' && (
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-                                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                                        <span className="text-xs font-semibold text-slate-400 uppercase">Total Stok</span>
-                                        <div className="mt-2 text-2xl font-extrabold">{calculatedStock.reduce((a, b) => a + b.currentStock, 0)} <span className="text-xs font-normal text-slate-500">Dosis</span></div>
-                                    </div>
-                                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                                        <span className="text-xs font-semibold text-slate-400 uppercase">Jenis Vaksin</span>
-                                        <div className="mt-2 text-2xl font-extrabold text-emerald-600">{vaccines.length} <span className="text-xs font-normal text-slate-500">Item</span></div>
-                                    </div>
-                                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                                        <span className="text-xs font-semibold text-rose-500 uppercase">Lot Kadaluarsa</span>
-                                        <div className="mt-2 text-2xl font-extrabold text-rose-600">{calculatedStock.reduce((sum, v) => sum + v.nearExpLots.length, 0)} <span className="text-xs font-normal text-rose-600">Lot</span></div>
-                                    </div>
-                                </div>
-                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                                    <h2 className="font-bold text-slate-800 mb-4">Stok Realtime</h2>
-                                    <div className="divide-y divide-slate-100">
-                                        {calculatedStock.map(vax => (
-                                            <div key={vax.id} className="py-3 flex justify-between items-center text-sm">
-                                                <div><p className="font-semibold">{vax.name}</p><p className="text-xs text-slate-400">{vax.category}</p></div>
-                                                <div className="text-right"><span className={`font-black text-base ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.currentStock}</span><span className="text-xs text-slate-400 ml-1">Dosis</span></div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
 
                         {activeTab === 'stock' && (
                             <div className="space-y-4">
@@ -496,14 +489,17 @@
                                             <div onClick={() => setExpandedVaxId(expandedVaxId === vax.id ? null : vax.id)} className="p-4 flex justify-between items-center cursor-pointer hover:bg-slate-50">
                                                 <div className="flex items-center space-x-3">
                                                     <div className="bg-emerald-50 text-emerald-700 p-2 rounded-xl"><Package className="w-5 h-5" /></div>
-                                                    <div className="relative group">
+                                                    <div>
                                                         <h3 className="font-bold text-sm">{vax.name}</h3>
                                                         <p className="text-xs text-slate-400">{vax.category}</p>
-                                                        <button onClick={(e) => { e.stopPropagation(); setEditVax(vax); setIsEditModalOpen(true); }} className="absolute -right-8 top-0 text-slate-300 hover:text-emerald-600 transition"><Edit3 className="w-4 h-4" /></button>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center space-x-4">
-                                                    <div className="text-right"><span className={`text-lg font-black ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.currentStock}</span><span className="text-xs text-slate-400 ml-1">Dosis</span></div>
+                                                    <div className="text-right">
+                                                        <span className={`text-lg font-black ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.totalDoses}</span>
+                                                        <span className="text-xs text-slate-400 ml-1">Dosis</span>
+                                                        <div className="text-[10px] font-bold text-slate-500">{vax.totalUnits} Satuan</div>
+                                                    </div>
                                                     {expandedVaxId === vax.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                                                 </div>
                                             </div>
@@ -514,7 +510,13 @@
                                                             <div className="flex justify-between mb-1"><span className="font-mono font-bold text-emerald-700">{lot.lotId}</span><span className="text-rose-600 font-bold">{lot.expireDate}</span></div>
                                                             <p className="text-slate-500">Batch: {lot.batchNo}</p>
                                                             <p className="text-slate-500">Produsen: {lot.producer}</p>
-                                                            <div className="mt-2 pt-2 border-t text-right font-black text-sm">{lot.currentStock} Dosis</div>
+                                                            <div className="mt-2 pt-2 border-t flex justify-between items-end font-black">
+                                                                <span className="text-slate-400 text-[10px] uppercase">Sisa:</span>
+                                                                <div className="text-right">
+                                                                    <div className="text-sm text-emerald-700">{lot.currentDoses} Dosis</div>
+                                                                    <div className="text-[10px] text-slate-500">{lot.currentUnits} {lot.unitName}</div>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -567,52 +569,54 @@
                                                     <div className="text-slate-400 mt-1">{tx.date}</div>
                                                 </div>
                                             </div>
-                                            <div className="flex space-x-2">
-                                                <button onClick={() => { setEditTx(tx); setIsEditTxModalOpen(true); }} className="text-slate-300 hover:text-emerald-600 p-1 transition"><Edit3 className="w-4 h-4" /></button>
-                                                <button onClick={() => handleDeleteTx(tx.id)} className="text-slate-300 hover:text-rose-600 p-1 transition"><Trash2 className="w-4 h-4" /></button>
-                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
 
-                        {activeTab === 'system' && (
-                            <div className="max-w-2xl mx-auto space-y-6">
-                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                        {activeTab === 'expired' && (
+                            <div className="space-y-4">
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-3">
+                                    <div className="bg-rose-100 text-rose-600 p-2 rounded-xl"><AlertCircle className="w-5 h-5" /></div>
                                     <div>
-                                        <h2 className="font-bold text-lg text-slate-800">Restore Data dari Cloud</h2>
-                                        <p className="text-xs text-slate-500">Gunakan fitur ini jika data di aplikasi hilang atau Anda baru saja mengganti perangkat. Data akan ditarik dari Google Sheets.</p>
+                                        <h2 className="font-bold">Lot Hampir/Sudah Kadaluarsa</h2>
+                                        <p className="text-xs text-slate-500">Menampilkan lot dengan sisa masa berlaku &lt; 30 hari.</p>
                                     </div>
-                                    <div className="grid grid-cols-1 gap-3">
-                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                                            <div className="flex items-center space-x-3">
-                                                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Package className="w-4 h-4" /></div>
-                                                <div><p className="text-sm font-bold">Master Vaksin</p><p className="text-[10px] text-slate-400">Muat ulang daftar jenis vaksin</p></div>
-                                            </div>
-                                            <button onClick={() => restoreFromSheet('Master')} disabled={isSyncing} className={`px-4 py-2 rounded-xl text-xs font-bold transition ${isSyncing ? 'bg-slate-300' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}>Restore</button>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {expiredLots.length === 0 ? (
+                                        <div className="col-span-full text-center py-12 bg-white rounded-3xl border border-dashed border-slate-300">
+                                            <p className="text-slate-400 text-sm">Tidak ada lot yang mendekati kadaluarsa.</p>
                                         </div>
-                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                                            <div className="flex items-center space-x-3">
-                                                <div className="p-2 bg-blue-100 text-blue-700 rounded-lg"><TrendingUp className="w-4 h-4" /></div>
-                                                <div><p className="text-sm font-bold">Data Vaksin Masuk</p><p className="text-[10px] text-slate-400">Muat ulang riwayat penerimaan</p></div>
+                                    ) : (
+                                        expiredLots.map(lot => (
+                                            <div key={lot.lotId} className="bg-white p-4 rounded-2xl shadow-sm border-l-4 border-l-rose-500 border border-slate-100 space-y-3">
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 uppercase font-bold">{lot.vaxName}</p>
+                                                        <p className="font-mono font-bold text-emerald-700 text-sm">{lot.lotId}</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-rose-600 font-black text-sm">{lot.expireDate}</p>
+                                                        <p className={`text-[10px] font-bold ${lot.daysLeft < 0 ? 'text-rose-700' : 'text-amber-600'}`}>
+                                                            {lot.daysLeft < 0 ? 'SUDAH EXPIRED' : `${lot.daysLeft} Hari Lagi`}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg">
+                                                    <div>Batch: <b className="text-slate-700">{lot.batchNo}</b></div>
+                                                    <div className="text-right">Sisa: <b className="text-slate-700">{lot.currentDoses} Dosis</b></div>
+                                                </div>
                                             </div>
-                                            <button onClick={() => restoreFromSheet('Masuk')} disabled={isSyncing} className={`px-4 py-2 rounded-xl text-xs font-bold transition ${isSyncing ? 'bg-slate-300' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>Restore</button>
-                                        </div>
-                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                                            <div className="flex items-center space-x-3">
-                                                <div className="p-2 bg-rose-100 text-rose-700 rounded-lg"><TrendingDown className="w-4 h-4" /></div>
-                                                <div><p className="text-sm font-bold">Data Vaksin Keluar</p><p className="text-[10px] text-slate-400">Muat ulang riwayat pengeluaran</p></div>
-                                            </div>
-                                            <button onClick={() => restoreFromSheet('Keluar')} disabled={isSyncing} className={`px-4 py-2 rounded-xl text-xs font-bold transition ${isSyncing ? 'bg-slate-300' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>Restore</button>
-                                        </div>
-                                    </div>
-                                    {isSyncing && <div className="text-center text-xs text-emerald-600 font-medium animate-pulse">Sedang menyinkronkan data...</div>}
+                                        ))
+                                    )}
                                 </div>
                             </div>
                         )}
                     </main>
 
+                    {/* MODAL TAMBAH VAKSIN */}
                     {isVaxModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
@@ -630,23 +634,7 @@
                         </div>
                     )}
 
-                    {isEditModalOpen && editVax && (
-                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-                                <div className="flex justify-between items-center border-b pb-3 border-slate-100">
-                                    <h3 className="font-bold text-base">Edit Batas Stok: {editVax.name}</h3>
-                                    <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
-                                </div>
-                                <form onSubmit={handleUpdateVaccine} className="space-y-3 text-xs">
-                                    <div className="p-2 bg-slate-100 rounded-lg text-slate-500 font-medium">ID: {editVax.id}</div>
-                                    <div><label className="block text-slate-600 font-semibold mb-1">Kategori</label><select value={editVax.category} onChange={(e) => setEditVax({...editVax, category: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"><option value="Vaksin Wajib">Vaksin Wajib</option><option value="Vaksin Pilihan">Vaksin Pilihan</option><option value="Vaksin Khusus">Vaksin Khusus</option></select></div>
-                                    <div><label className="block text-slate-600 font-semibold mb-1">Batas Minimum Stok *</label><input required type="number" value={editVax.minStock} onChange={(e) => setEditVax({...editVax, minStock: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" /></div>
-                                    <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md">Update Master</button>
-                                </form>
-                            </div>
-                        </div>
-                    )}
-
+                    {/* MODAL CSV PREVIEW */}
                     {isCsvPreviewOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-6xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-hidden flex flex-col">
@@ -654,7 +642,7 @@
                                     <h3 className="font-bold text-lg text-slate-800">Review Data Impor CSV</h3>
                                     <button onClick={() => setIsCsvPreviewOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
                                 </div>
-                                <p className="text-xs text-slate-500 italic">Silakan periksa data di bawah ini. Anda dapat mengedit isi kolom secara langsung sebelum disimpan.</p>
+                                <p className="text-xs text-slate-500 italic">Silakan periksa data di bawah ini sebelum disimpan.</p>
                                 <div className="overflow-auto flex-1 border rounded-2xl">
                                     <table className="w-full text-left text-xs border-collapse">
                                         <thead className="bg-slate-100 sticky top-0">
@@ -673,33 +661,15 @@
                                         <tbody>
                                             {csvPreviewItems.map((item, idx) => (
                                                 <tr key={item.tempId} className="hover:bg-slate-50">
-                                                    <td className="p-2 border-b"><input type="date" value={item.date} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].date = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded" /></td>
-                                                    <td className="p-2 border-b"><input type="text" value={item.source} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].source = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded" /></td>
-                                                    <td className="p-2 border-b"><input type="text" value={item.vaxName} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].vaxName = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded font-bold" /></td>
-                                                    <td className="p-2 border-b"><input type="text" value={item.producer} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].producer = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded" /></td>
-                                                    <td className="p-2 border-b"><input type="text" value={item.batchNo} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].batchNo = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded uppercase" /></td>
-                                                    <td className="p-2 border-b"><input type="date" value={item.expireDate} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].expireDate = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded" /></td>
-                                                    <td className="p-2 border-b"><input type="text" value={item.dose} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].dose = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded" /></td>
-                                                    <td className="p-2 border-b"><input type="text" value={item.unit} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].unit = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded" /></td>
-                                                    <td className="p-2 border-b"><input type="number" value={item.qty} onChange={(e) => {
-                                                        const n = [...csvPreviewItems]; n[idx].qty = e.target.value; setCsvPreviewItems(n);
-                                                    }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="date" value={item.date} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].date = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.source} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].source = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.vaxName} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].vaxName = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded font-bold" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.producer} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].producer = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.batchNo} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].batchNo = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded uppercase" /></td>
+                                                    <td className="p-2 border-b"><input type="date" value={item.expireDate} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].expireDate = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.dose} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].dose = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.unit} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].unit = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="number" value={item.qty} onChange={(e) => { const n = [...csvPreviewItems]; n[idx].qty = e.target.value; setCsvPreviewItems(n); }} className="w-full p-1 border rounded" /></td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -715,46 +685,7 @@
                         </div>
                     )}
 
-                    {isEditTxModalOpen && editTx && (
-                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-                                <div className="flex justify-between items-center border-b pb-3 border-slate-100">
-                                    <h3 className="font-bold text-base">Edit Transaksi {editTx.type === 'masuk' ? 'Masuk' : 'Keluar'}</h3>
-                                    <button onClick={() => setIsEditTxModalOpen(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
-                                </div>
-                                <form onSubmit={handleUpdateTx} className="space-y-3 text-xs">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="block text-slate-600 font-semibold mb-1">Tanggal</label>
-                                            <input required type="date" value={superFormatDate(editTx.date)} onChange={(e) => setEditTx({...editTx, date: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-slate-600 font-semibold mb-1">Sumber/Untuk</label>
-                                            <input required type="text" value={editTx.sourceOrFor} onChange={(e) => setEditTx({...editTx, sourceOrFor: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-slate-600 font-semibold mb-1">Jumlah</label>
-                                        <input required type="number" value={editTx.qty} onChange={(e) => setEditTx({...editTx, qty: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg" />
-                                    </div>
-                                    {editTx.type === 'masuk' && (
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <label className="block text-slate-600 font-semibold mb-1">No Batch</label>
-                                                <input type="text" value={editTx.batchNo} onChange={(e) => setEditTx({...editTx, batchNo: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg uppercase" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-slate-600 font-semibold mb-1">Exp Date</label>
-                                                <input type="date" value={superFormatDate(editTx.expireDate)} onChange={(e) => setEditTx({...editTx, expireDate: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg" />
-                                            </div>
-                                        </div>
-                                    )}
-                                    <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">Simpan Perubahan</button>
-                                </form>
-                            </div>
-                        </div>
-                    )}
-
+                    {/* MODAL CATAT MUTASI */}
                     {isTxModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -777,9 +708,7 @@
                                             <tbody>
                                                 {txItems.map((item, idx) => (
                                                     <tr key={idx}>
-                                                        <td className="p-2 border-b"><select required value={item.vaccineId} onChange={(e) => {
-                                                            const newItems = [...txItems]; newItems[idx].vaccineId = e.target.value; setTxItems(newItems);
-                                                        }} className="w-full p-1.5 bg-slate-50 border rounded">
+                                                        <td className="p-2 border-b"><select required value={item.vaccineId} onChange={(e) => { const n = [...txItems]; n[idx].vaccineId = e.target.value; setTxItems(n); }} className="w-full p-1.5 bg-slate-50 border rounded">
                                                             <option value="">-- Pilih --</option>
                                                             {vaccines.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                                                         </select></td>
@@ -788,8 +717,8 @@
                                                                 <td className="p-2 border-b"><input type="text" value={item.producer} onChange={(e) => { const n = [...txItems]; n[idx].producer = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
                                                                 <td className="p-2 border-b"><input type="text" value={item.batchNo} onChange={(e) => { const n = [...txItems]; n[idx].batchNo = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded uppercase" /></td>
                                                                 <td className="p-2 border-b"><input type="date" value={item.expireDate} onChange={(e) => { const n = [...txItems]; n[idx].expireDate = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
-                                                                <td className="p-2 border-b"><input type="text" value={item.dose} onChange={(e) => { const n = [...txItems]; n[idx].dose = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" placeholder="0.5ml" /></td>
-                                                                <td className="p-2 border-b"><input type="text" value={item.unit} onChange={(e) => { const n = [...txItems]; n[idx].unit = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" placeholder="Dosis" /></td>
+                                                                <td className="p-2 border-b"><input type="text" value={item.dose} onChange={(e) => { const n = [...txItems]; n[idx].dose = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" placeholder="20" /></td>
+                                                                <td className="p-2 border-b"><input type="text" value={item.unit} onChange={(e) => { const n = [...txItems]; n[idx].unit = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" placeholder="Vial" /></td>
                                                             </>
                                                         ) : (
                                                             <td className="p-2 border-b"><select required value={item.lotId} onChange={(e) => { const n = [...txItems]; n[idx].lotId = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded">
@@ -814,10 +743,9 @@
                     )}
 
                     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-2 flex justify-around items-center md:hidden z-30 shadow-lg">
-                        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center space-y-1 ${activeTab === 'dashboard' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><LayoutDashboard className="w-5 h-5" /><span className="text-[10px]">Dashboard</span></button>
-                        <button onClick={() => setActiveTab('stock')} className={`flex flex-col items-center space-y-1 ${activeTab === 'stock' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><Package className="w-5 h-5" /><span className="text-[10px]">Stok & Lot</span></button>
+                        <button onClick={() => setActiveTab('stock')} className={`flex flex-col items-center space-y-1 ${activeTab === 'stock' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><Package className="w-5 h-5" /><span className="text-[10px]">Stok</span></button>
                         <button onClick={() => setActiveTab('transactions')} className={`flex flex-col items-center space-y-1 ${activeTab === 'transactions' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><ArrowLeftRight className="w-5 h-5" /><span className="text-[10px]">Transaksi</span></button>
-                        <button onClick={() => setActiveTab('system')} className={`flex flex-col items-center space-y-1 ${activeTab === 'system' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><RefreshCcw className="w-5 h-5" /><span className="text-[10px]">Sistem</span></button>
+                        <button onClick={() => setActiveTab('expired')} className={`flex flex-col items-center space-y-1 ${activeTab === 'expired' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><AlertCircle className="w-5 h-5" /><span className="text-[10px]">Expired</span></button>
                     </nav>
                 </div>
             );
