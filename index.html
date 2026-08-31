@@ -3,31 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VaxTrack Lot System - Manajemen Stok Vaksin</title>
-    
+    <title>VaxTrack Cloud - Date Fixed Final</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#059669">
-
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
-<body class="bg-slate-50 text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
+<body class="bg-slate-50 text-slate-800 antialiased">
 
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
-        // Icons
+        // ==========================================
+        // KONFIGURASI: TEMPEL URL GOOGLE SCRIPT ANDA DI SINI
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzYRWtMss4mafbjt9jYTcVi38x6vuJR6Izs2EC1qZPkTOSRuMXlPNwjWuE-09t5nMOJ/exec"; 
+        // ==========================================
+
         const LayoutDashboard = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>);
         const Package = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>);
         const ArrowLeftRight = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>);
         const PlusCircle = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>);
-        const Download = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>);
         const AlertTriangle = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>);
         const Search = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>);
         const TrendingUp = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>);
@@ -37,14 +37,18 @@
         const X = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>);
         const ChevronDown = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>);
         const ChevronUp = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>);
-        const Tag = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 2H2v10l11.29 11.29a1 1 0 0 0 1.41 0l7.29-7.29a1 1 0 0 0 0-1.41L12 2z"/><path d="M7 7h.01"/></svg>);
+        const Edit3 = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1219430786797687 0 0 1 0 4.242548672 2.1219430786797687 0 0 0 0-4.242548672z"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>);
+        const FileUp = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>);
+        const FileDown = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>);
+        const RefreshCcw = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-9 9Z"/><path d="M12 12v4"/><path d="m16 16-4 4-4-4"/></svg>);
 
         function App() {
             const [activeTab, setActiveTab] = useState('dashboard');
             const [toast, setToast] = useState(null);
             const [confirmModal, setConfirmModal] = useState(null);
+            const [isSyncing, setIsSyncing] = useState(false);
+            const fileInputRef = useRef(null);
 
-            // State Master & Transaksi
             const [vaccines, setVaccines] = useState(() => {
                 const saved = localStorage.getItem('vax_master_v2');
                 return saved ? JSON.parse(saved) : [];
@@ -55,20 +59,53 @@
                 return saved ? JSON.parse(saved) : [];
             });
 
-            // UI State
             const [isTxModalOpen, setIsTxModalOpen] = useState(false);
             const [isVaxModalOpen, setIsVaxModalOpen] = useState(false);
+            const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+            const [isEditTxModalOpen, setIsEditTxModalOpen] = useState(false);
+            const [isCsvPreviewOpen, setIsCsvPreviewOpen] = useState(false);
             const [expandedVaxId, setExpandedVaxId] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
             const [filterType, setFilterType] = useState('all');
 
-            // Master Vaksin Form
             const [vaxForm, setVaxForm] = useState({ name: '', category: 'Vaksin Wajib', minStock: 10 });
-
-            // Transaksi Form (Dynamic Batch)
+            const [editVax, setEditVax] = useState(null);
+            const [editTx, setEditTx] = useState(null);
+            const [csvPreviewItems, setCsvPreviewItems] = useState([]);
             const [txType, setTxType] = useState('masuk');
             const [txHeader, setTxHeader] = useState({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
             const [txItems, setTxItems] = useState([{}]);
+
+            // SUPER DATE FORMATTER: Memastikan tanggal selalu YYYY-MM-DD
+            const superFormatDate = (dateVal) => {
+                if (!dateVal) return '';
+                
+                // Jika sudah format YYYY-MM-DD, kembalikan langsung
+                if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+                    return dateVal;
+                }
+
+                try {
+                    // Coba handle format DD/MM/YYYY atau DD-MM-YYYY
+                    if (typeof dateVal === 'string') {
+                        const parts = dateVal.split(/[\/\-]/);
+                        if (parts.length === 3 && parts[0].length <= 2) {
+                            const day = parts[0].padStart(2, '0');
+                            const month = parts[1].padStart(2, '0');
+                            const year = parts[2].length === 4 ? parts[2] : '20' + parts[2];
+                            return `${year}-${month}-${day}`;
+                        }
+                    }
+
+                    // Coba parse dengan Date object (menangani format ISO dan Google Sheets)
+                    const d = new Date(dateVal);
+                    if (isNaN(d.getTime())) return dateVal; // Jika gagal, kembalikan asli
+                    
+                    return d.toISOString().split('T')[0];
+                } catch (e) {
+                    return dateVal;
+                }
+            };
 
             const showToast = (message, type = 'error') => {
                 setToast({ message, type });
@@ -78,127 +115,230 @@
             useEffect(() => { localStorage.setItem('vax_master_v2', JSON.stringify(vaccines)); }, [vaccines]);
             useEffect(() => { localStorage.setItem('vax_tx_v2', JSON.stringify(transactions)); }, [transactions]);
 
-            // Kalkulasi Stok & Lot
+            const syncToSheet = async (payload) => {
+                try {
+                    await fetch(GAS_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } catch (e) { console.error("Sync Error:", e); }
+            };
+
+            const restoreFromSheet = async (sheetName) => {
+                setIsSyncing(true);
+                try {
+                    const response = await fetch(`${GAS_URL}?sheet=${sheetName}`);
+                    const data = await response.json();
+                    if (sheetName === 'Master') {
+                        const restoredMaster = data.map(item => ({
+                            id: item.idvaksin, name: item.namavaksin, category: item.kategori, minStock: Number(item.batasminimum)
+                        }));
+                        setVaccines(restoredMaster);
+                        showToast('Master Vaksin dimuat ulang!', 'success');
+                    } else if (sheetName === 'Masuk' || sheetName === 'Keluar') {
+                        const restoredTxs = data.map(item => ({
+                            id: item.idtransaksi || `TX-REST-${Math.random()}`,
+                            vaccineId: item.namavaksin, vaccineName: item.namavaksin, type: sheetName === 'Masuk' ? 'masuk' : 'keluar',
+                            date: superFormatDate(item.tanggal), sourceOrFor: item.sumber || item.peruntukan,
+                            lotId: item.idmasuk || item.lotid, producer: item.merk || '-', batchNo: item.nobatch || '-',
+                            expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
+                            qty: Number(item.jumlah), notes: 'Restored from Sheet'
+                        }));
+                        setTransactions([...restoredTxs, ...transactions]);
+                        showToast(`Data ${sheetName} dimuat ulang!`, 'success');
+                    }
+                } catch (e) { showToast('Gagal mengambil data dari Google Sheet', 'error'); }
+                setIsSyncing(false);
+            };
+
             const getCalculatedStock = () => {
                 const today = new Date();
                 return vaccines.map((vax) => {
-                    const vaxTxs = transactions.filter(t => t.vaccineId === vax.id);
+                    const vaxTxs = transactions.filter(t => t.vaccineId === vax.id || t.vaccineName === vax.name);
                     const lotMap = {};
-
                     vaxTxs.forEach((tx) => {
-                        const key = tx.lotId || tx.batchNo;
-                        if (!lotMap[key]) {
-                            lotMap[key] = { lotId: key, batchNo: tx.batchNo, expireDate: tx.expireDate, producer: tx.producer, masuk: 0, keluar: 0, currentStock: 0 };
-                        }
+                        const key = tx.lotId;
+                        if (!lotMap[key]) lotMap[key] = { lotId: key, batchNo: tx.batchNo, expireDate: tx.expireDate, producer: tx.producer, masuk: 0, keluar: 0, currentStock: 0 };
                         if (tx.type === 'masuk') lotMap[key].masuk += Number(tx.qty);
                         else lotMap[key].keluar += Number(tx.qty);
                         lotMap[key].currentStock = lotMap[key].masuk - lotMap[key].keluar;
                     });
-
                     const lots = Object.values(lotMap).filter(l => l.masuk > 0).sort((a, b) => new Date(a.expireDate) - new Date(b.expireDate));
                     const currentStock = lots.reduce((sum, l) => sum + l.currentStock, 0);
-
                     const nearExpLots = lots.filter(l => {
                         if (l.currentStock <= 0) return false;
-                        const exp = new Date(l.expireDate);
-                        return Math.ceil((exp - today) / (1000 * 60 * 60 * 24)) <= 30;
+                        return Math.ceil((new Date(l.expireDate) - today) / 86400000) <= 30;
                     });
-
                     return { ...vax, lots, currentStock, isLowStock: currentStock <= vax.minStock, nearExpLots };
                 });
             };
 
             const calculatedStock = getCalculatedStock();
 
-            const handleAddVaccine = (e) => {
+            const handleAddVaccine = async (e) => {
                 e.preventDefault();
                 if (!vaxForm.name) return;
                 const newVax = { id: 'V-' + Date.now(), name: vaxForm.name, category: vaxForm.category, minStock: Number(vaxForm.minStock) };
                 setVaccines([...vaccines, newVax]);
+                await syncToSheet({ action: 'addMaster', ...newVax });
                 setIsVaxModalOpen(false);
                 setVaxForm({ name: '', category: 'Vaksin Wajib', minStock: 10 });
-                showToast('Jenis vaksin berhasil ditambahkan!', 'success');
+                showToast('Jenis vaksin disimpan!', 'success');
             };
 
-            const handleAddItem = () => setTxItems([...txItems, {}]);
-            const handleRemoveItem = (index) => {
-                const newItems = [...txItems];
-                newItems.splice(index, 1);
-                setTxItems(newItems.length ? newItems : [{}]);
+            const handleUpdateVaccine = async (e) => {
+                e.preventDefault();
+                const updatedVax = { ...editVax };
+                setVaccines(vaccines.map(v => v.id === updatedVax.id ? updatedVax : v));
+                await syncToSheet({ action: 'editMaster', id: updatedVax.id, category: updatedVax.category, minStock: updatedVax.minStock });
+                setIsEditModalOpen(false);
+                setEditVax(null);
+                showToast('Batas minimum stok diperbarui!', 'success');
             };
 
-            const handleItemChange = (index, field, value) => {
-                const newItems = [...txItems];
-                newItems[index] = { ...newItems[index], [field]: value };
-                setTxItems(newItems);
+            const generateSmartLotId = (vaccine, batchNo, date, currentSessionIds) => {
+                const vaxNameShort = vaccine.name.toLowerCase().replace(/\s+/g, '');
+                const existingLot = transactions.find(t => 
+                    t.vaccineId === vaccine.id && t.batchNo === batchNo && t.date === date && t.type === 'masuk'
+                );
+                if (existingLot) return existingLot.lotId;
+                const usedIds = [...transactions.filter(t => t.vaccineId === vaccine.id && t.type === 'masuk').map(t => t.lotId), ...currentSessionIds];
+                let maxNumber = 0;
+                usedIds.forEach(id => {
+                    const num = parseInt(id.replace(/[^\d]/g, ''));
+                    if (!isNaN(num) && num > maxNumber) maxNumber = num;
+                });
+                return `${vaxNameShort}${maxNumber + 1}`;
             };
 
-            const handleSaveTransactions = (e) => {
+            const handleSaveTransactions = async (e) => {
                 e.preventDefault();
                 if (!txHeader.date || !txHeader.sourceOrFor) {
                     showToast('Tanggal dan Sumber/Peruntukan harus diisi!');
                     return;
                 }
-
+                setIsSyncing(true);
                 const newTxs = [];
+                const currentSessionIds = [];
                 for (let item of txItems) {
                     if (!item.vaccineId || !item.qty) continue;
-
                     const vax = vaccines.find(v => v.id === item.vaccineId);
-                    const lotId = txType === 'masuk' ? (item.batchNo || 'LOT-GEN') : item.lotId;
-
-                    newTxs.push({
+                    let lotId, producer = '-', batchNo = '-', expireDate = '-';
+                    if (txType === 'masuk') {
+                        lotId = generateSmartLotId(vax, item.batchNo, txHeader.date, currentSessionIds);
+                        currentSessionIds.push(lotId);
+                        producer = item.producer || '-'; batchNo = item.batchNo || '-'; expireDate = item.expireDate || '-';
+                    } else {
+                        lotId = item.lotId;
+                        const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
+                        if (sourceTx) { producer = sourceTx.producer; batchNo = sourceTx.batchNo; expireDate = sourceTx.expireDate; }
+                    }
+                    const transactionData = {
                         id: `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-                        vaccineId: item.vaccineId,
-                        vaccineName: vax ? vax.name : 'Unknown',
-                        type: txType,
-                        date: txHeader.date,
-                        sourceOrFor: txHeader.sourceOrFor,
-                        lotId: lotId,
-                        producer: item.producer || '-',
-                        batchNo: item.batchNo || '-',
-                        expireDate: item.expireDate || '-',
-                        dose: item.dose || '-',
-                        unit: item.unit || 'dosis',
-                        qty: Number(item.qty),
-                        notes: item.notes || ''
-                    });
+                        vaccineId: item.vaccineId, vaccineName: vax ? vax.name : 'Unknown',
+                        type: txType, date: txHeader.date, sourceOrFor: txHeader.sourceOrFor,
+                        lotId: lotId, producer: producer, batchNo: batchNo, expireDate: expireDate,
+                        dose: item.dose || '-', unit: item.unit || 'dosis', qty: Number(item.qty), notes: item.notes || ''
+                    };
+                    newTxs.push(transactionData);
+                    await syncToSheet(transactionData);
                 }
-
-                if (newTxs.length === 0) {
-                    showToast('Mohon isi minimal satu jenis vaksin!');
-                    return;
-                }
-
+                if (newTxs.length === 0) { setIsSyncing(false); showToast('Mohon isi minimal satu jenis vaksin!'); return; }
                 setTransactions([...newTxs, ...transactions]);
                 setIsTxModalOpen(false);
                 setTxItems([{}]);
                 setTxHeader({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
-                showToast('Transaksi berhasil disimpan!', 'success');
+                setIsSyncing(false);
+                showToast('Berhasil disimpan & Sync Cloud!', 'success');
+            };
+
+            const handleUpdateTx = async (e) => {
+                e.preventDefault();
+                const updatedTx = { ...editTx };
+                setTransactions(transactions.map(t => t.id === updatedTx.id ? updatedTx : t));
+                await syncToSheet({ action: 'editTx', ...updatedTx });
+                setIsEditTxModalOpen(false);
+                setEditTx(null);
+                showToast('Transaksi berhasil diperbarui!', 'success');
             };
 
             const handleDeleteTx = (id) => {
                 setConfirmModal({
-                    message: 'Hapus transaksi ini?',
+                    message: 'Hapus transaksi ini dari lokal?',
                     onConfirm: () => {
                         setTransactions(transactions.filter(t => t.id !== id));
                         setConfirmModal(null);
-                        showToast('Dihapus', 'success');
+                        showToast('Dihapus dari lokal', 'success');
                     }
                 });
             };
 
-            const downloadCSV = () => {
-                let csv = "ID,Tanggal,Tipe,Vaksin,Lot/Batch,Sumber/Untuk,Jumlah,Satuan,Kadaluarsa\n";
-                transactions.forEach(t => {
-                    csv += `${t.id},${t.date},${t.type},${t.vaccineName},${t.lotId},${t.sourceOrFor},${t.qty},${t.unit},${t.expireDate}\n`;
-                });
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.setAttribute('href', url);
-                a.setAttribute('download', `Laporan_Vaksin_${new Date().toISOString().split('T')[0]}.csv`);
-                a.click();
+            const downloadTemplate = () => {
+                const headers = "Tanggal Masuk,Sumber,Nama Vaksin,Merk,No Batch,Kadaluarsa(YYYY-MM-DD),Dosis,Satuan,Jumlah\n";
+                const example = "2023-10-27,Dinkes Kota,BCG,Bio Farma,BCG2026A,2026-12-31,0.05ml,dosis,100\n";
+                const blob = new Blob([headers + example], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", "Template_Vaksin_Masuk.csv");
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const text = event.target.result;
+                    const lines = text.split('\n').filter(line => line.trim() !== '');
+                    const dataRows = lines.slice(1);
+                    const previewItems = [];
+                    dataRows.forEach((line, i) => {
+                        const row = line.split(',');
+                        if (row.length >= 9) {
+                            previewItems.push({
+                                tempId: i, date: superFormatDate(row[0].trim()), source: row[1].trim(), vaxName: row[2].trim(),
+                                producer: row[3].trim(), batchNo: row[4].trim(), expireDate: superFormatDate(row[5].trim()),
+                                dose: row[6].trim(), unit: row[7].trim(), qty: row[8].trim()
+                            });
+                        }
+                    });
+                    if (previewItems.length === 0) showToast('Tidak ada data valid dalam file CSV', 'error');
+                    else { setCsvPreviewItems(previewItems); setIsCsvPreviewOpen(true); }
+                };
+                reader.readAsText(file);
+            };
+
+            const confirmCsvImport = async () => {
+                setIsSyncing(true);
+                const newTxs = [];
+                const currentSessionIds = [];
+                let errorCount = 0;
+                for (let item of csvPreviewItems) {
+                    const vax = vaccines.find(v => v.name.toLowerCase() === item.vaxName.toLowerCase());
+                    if (!vax) { errorCount++; continue; }
+                    const lotId = generateSmartLotId(vax, item.batchNo, item.date, currentSessionIds);
+                    currentSessionIds.push(lotId);
+                    const transactionData = {
+                        id: `TX-CSV-${Date.now()}-${item.tempId}`,
+                        vaccineId: vax.id, vaccineName: vax.name, type: 'masuk',
+                        date: item.date, sourceOrFor: item.source, lotId: lotId,
+                        producer: item.producer, batchNo: item.batchNo, expireDate: item.expireDate,
+                        dose: item.dose, unit: item.unit, qty: Number(item.qty), notes: 'Imported via CSV'
+                    };
+                    newTxs.push(transactionData);
+                    await syncToSheet(transactionData);
+                }
+                if (newTxs.length > 0) setTransactions([...newTxs, ...transactions]);
+                setIsCsvPreviewOpen(false);
+                setIsSyncing(false);
+                if (errorCount > 0) showToast(`${errorCount} vaksin tidak ditemukan di Master`, 'error');
+                showToast(`Berhasil mengimpor ${newTxs.length} data!`, 'success');
             };
 
             const filteredStock = calculatedStock.filter(v => 
@@ -211,12 +351,10 @@
                     <header className="bg-emerald-600 text-white shadow-md sticky top-0 z-30">
                         <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
                             <div className="flex items-center space-x-3">
-                                <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
-                                    <Syringe className="w-6 h-6 text-white" />
-                                </div>
+                                <div className="bg-white/20 p-2 rounded-xl"><Syringe className="w-6 h-6 text-white" /></div>
                                 <div>
-                                    <h1 className="font-bold text-lg leading-tight">VaxTrack v2</h1>
-                                    <p className="text-xs text-emerald-100">Manajemen Stok Vaksin</p>
+                                    <h1 className="font-bold text-lg leading-tight">VaxTrack Cloud</h1>
+                                    <p className="text-xs text-emerald-100">Full Date Formatting Enabled</p>
                                 </div>
                             </div>
                             <button onClick={() => setIsTxModalOpen(true)} className="hidden sm:flex items-center space-x-2 bg-white text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-xl font-medium text-sm shadow transition">
@@ -243,12 +381,12 @@
 
                     <main className="max-w-6xl mx-auto px-4 pt-4">
                         <div className="hidden md:flex space-x-2 mb-6 border-b border-slate-200 pb-2">
-                            {['dashboard', 'stock', 'transactions', 'export'].map(tab => (
+                            {['dashboard', 'stock', 'transactions', 'system'].map(tab => (
                                 <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition ${activeTab === tab ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
                                     {tab === 'dashboard' && <LayoutDashboard className="w-4 h-4" />}
                                     {tab === 'stock' && <Package className="w-4 h-4" />}
                                     {tab === 'transactions' && <ArrowLeftRight className="w-4 h-4" />}
-                                    {tab === 'export' && <Download className="w-4 h-4" />}
+                                    {tab === 'system' && <RefreshCcw className="w-4 h-4" />}
                                     <span className="capitalize">{tab}</span>
                                 </button>
                             ))}
@@ -256,7 +394,7 @@
 
                         {activeTab === 'dashboard' && (
                             <div className="space-y-6">
-                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                                         <span className="text-xs font-semibold text-slate-400 uppercase">Total Stok</span>
                                         <div className="mt-2 text-2xl font-extrabold">{calculatedStock.reduce((a, b) => a + b.currentStock, 0)} <span className="text-xs font-normal text-slate-500">Dosis</span></div>
@@ -266,28 +404,17 @@
                                         <div className="mt-2 text-2xl font-extrabold text-emerald-600">{vaccines.length} <span className="text-xs font-normal text-slate-500">Item</span></div>
                                     </div>
                                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                                        <span className="text-xs font-semibold text-amber-500 uppercase">Stok Menipis</span>
-                                        <div className="mt-2 text-2xl font-extrabold text-amber-600">{calculatedStock.filter(v => v.isLowStock).length} <span className="text-xs font-normal text-amber-600">Item</span></div>
-                                    </div>
-                                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                                        <span className="text-xs font-semibold text-rose-500 uppercase">Kadaluarsa</span>
+                                        <span className="text-xs font-semibold text-rose-500 uppercase">Lot Kadaluarsa</span>
                                         <div className="mt-2 text-2xl font-extrabold text-rose-600">{calculatedStock.reduce((sum, v) => sum + v.nearExpLots.length, 0)} <span className="text-xs font-normal text-rose-600">Lot</span></div>
                                     </div>
                                 </div>
-                                
                                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                                    <h2 className="font-bold text-slate-800 mb-4">Ringkasan Stok</h2>
+                                    <h2 className="font-bold text-slate-800 mb-4">Stok Realtime</h2>
                                     <div className="divide-y divide-slate-100">
                                         {calculatedStock.map(vax => (
                                             <div key={vax.id} className="py-3 flex justify-between items-center text-sm">
-                                                <div>
-                                                    <p className="font-semibold">{vax.name}</p>
-                                                    <p className="text-xs text-slate-400">{vax.category}</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <span className={`font-black text-base ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.currentStock}</span>
-                                                    <span className="text-xs text-slate-400 ml-1">Dosis</span>
-                                                </div>
+                                                <div><p className="font-semibold">{vax.name}</p><p className="text-xs text-slate-400">{vax.category}</p></div>
+                                                <div className="text-right"><span className={`font-black text-base ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.currentStock}</span><span className="text-xs text-slate-400 ml-1">Dosis</span></div>
                                             </div>
                                         ))}
                                     </div>
@@ -308,29 +435,26 @@
                                             <option value="Vaksin Wajib">Vaksin Wajib</option>
                                             <option value="Vaksin Pilihan">Vaksin Pilihan</option>
                                         </select>
-                                        <button onClick={() => setIsVaxModalOpen(true)} className="bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center space-x-1 whitespace-nowrap">
+                                        <button onClick={() => setIsVaxModalOpen(true)} className="bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center space-x-1">
                                             <PlusCircle className="w-3.5 h-3.5" />
                                             <span>Tambah Jenis</span>
                                         </button>
                                     </div>
                                 </div>
-
                                 <div className="space-y-3">
                                     {filteredStock.map(vax => (
                                         <div key={vax.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                                             <div onClick={() => setExpandedVaxId(expandedVaxId === vax.id ? null : vax.id)} className="p-4 flex justify-between items-center cursor-pointer hover:bg-slate-50">
                                                 <div className="flex items-center space-x-3">
                                                     <div className="bg-emerald-50 text-emerald-700 p-2 rounded-xl"><Package className="w-5 h-5" /></div>
-                                                    <div>
+                                                    <div className="relative group">
                                                         <h3 className="font-bold text-sm">{vax.name}</h3>
                                                         <p className="text-xs text-slate-400">{vax.category}</p>
+                                                        <button onClick={(e) => { e.stopPropagation(); setEditVax(vax); setIsEditModalOpen(true); }} className="absolute -right-8 top-0 text-slate-300 hover:text-emerald-600 transition"><Edit3 className="w-4 h-4" /></button>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center space-x-4">
-                                                    <div className="text-right">
-                                                        <span className={`text-lg font-black ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.currentStock}</span>
-                                                        <span className="text-xs text-slate-400 ml-1">Dosis</span>
-                                                    </div>
+                                                    <div className="text-right"><span className={`text-lg font-black ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.currentStock}</span><span className="text-xs text-slate-400 ml-1">Dosis</span></div>
                                                     {expandedVaxId === vax.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                                                 </div>
                                             </div>
@@ -338,10 +462,7 @@
                                                 <div className="bg-slate-50 p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                                     {vax.lots.map(lot => (
                                                         <div key={lot.lotId} className={`p-3 rounded-xl bg-white border text-xs ${new Date(lot.expireDate) <= new Date(Date.now() + 30*86400000) ? 'border-rose-300 bg-rose-50' : 'border-slate-200'}`}>
-                                                            <div className="flex justify-between mb-1">
-                                                                <span className="font-mono font-bold text-emerald-700">{lot.lotId}</span>
-                                                                <span className="text-rose-600 font-bold">{lot.expireDate}</span>
-                                                            </div>
+                                                            <div className="flex justify-between mb-1"><span className="font-mono font-bold text-emerald-700">{lot.lotId}</span><span className="text-rose-600 font-bold">{lot.expireDate}</span></div>
                                                             <p className="text-slate-500">Batch: {lot.batchNo}</p>
                                                             <p className="text-slate-500">Produsen: {lot.producer}</p>
                                                             <div className="mt-2 pt-2 border-t text-right font-black text-sm">{lot.currentStock} Dosis</div>
@@ -357,13 +478,24 @@
 
                         {activeTab === 'transactions' && (
                             <div className="space-y-4">
-                                <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
-                                    <h2 className="font-bold">Riwayat Transaksi</h2>
-                                    <button onClick={() => setIsTxModalOpen(true)} className="bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-xl flex items-center space-x-1">
-                                        <PlusCircle className="w-3.5 h-3.5" />
-                                        <span>Tambah</span>
-                                    </button>
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-2xl shadow-sm border border-slate-100 gap-3">
+                                    <h2 className="font-bold">Riwayat Mutasi</h2>
+                                    <div className="flex gap-2 w-full sm:w-auto">
+                                        <button onClick={downloadTemplate} className="flex-1 sm:flex-none bg-slate-100 text-slate-600 text-xs font-semibold px-3 py-2 rounded-xl hover:bg-slate-200 transition flex items-center justify-center space-x-1">
+                                            <FileDown className="w-3.5 h-3.5" />
+                                            <span>Template CSV</span>
+                                        </button>
+                                        <button onClick={() => fileInputRef.current.click()} className={`flex-1 sm:flex-none ${isSyncing ? 'bg-slate-300' : 'bg-amber-500'} text-white text-xs font-semibold px-3 py-2 rounded-xl hover:bg-amber-600 transition flex items-center justify-center space-x-1`}>
+                                            <FileUp className="w-3.5 h-3.5" />
+                                            <span>Upload CSV</span>
+                                        </button>
+                                        <button onClick={() => setIsTxModalOpen(true)} className="flex-1 sm:flex-none bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center space-x-1">
+                                            <PlusCircle className="w-3.5 h-3.5" />
+                                            <span>Tambah</span>
+                                        </button>
+                                    </div>
                                 </div>
+                                <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
                                 <div className="space-y-2">
                                     {transactions.map(tx => (
                                         <div key={tx.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between gap-3 text-xs">
@@ -380,32 +512,58 @@
                                                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 mt-2 text-slate-500">
                                                         <div>Batch: <b className="text-slate-800">{tx.batchNo}</b></div>
                                                         <div>ED: <b className="text-rose-600">{tx.expireDate}</b></div>
-                                                        <div>Sumber/Untuk: <b>{tx.sourceOrFor}</b></div>
-                                                        <div>Jumlah: <b>{tx.qty} {tx.unit}</b></div>
+                                                        <div>Sumber/Untuk: <b className="text-slate-800">{tx.sourceOrFor}</b></div>
+                                                        <div>Jumlah: <b className="text-slate-800">{tx.qty} {tx.unit}</b></div>
                                                     </div>
                                                     <div className="text-slate-400 mt-1">{tx.date}</div>
                                                 </div>
                                             </div>
-                                            <button onClick={() => handleDeleteTx(tx.id)} className="text-slate-300 hover:text-rose-600 p-1 transition"><Trash2 className="w-4 h-4" /></button>
+                                            <div className="flex space-x-2">
+                                                <button onClick={() => { setEditTx(tx); setIsEditTxModalOpen(true); }} className="text-slate-300 hover:text-emerald-600 p-1 transition"><Edit3 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteTx(tx.id)} className="text-slate-300 hover:text-rose-600 p-1 transition"><Trash2 className="w-4 h-4" /></button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
 
-                        {activeTab === 'export' && (
-                            <div className="max-w-xl mx-auto bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4 text-center">
-                                <h2 className="font-bold text-lg">Export Data</h2>
-                                <p className="text-sm text-slate-500">Unduh seluruh riwayat mutasi vaksin ke format CSV.</p>
-                                <button onClick={downloadCSV} className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition flex items-center justify-center space-x-2">
-                                    <Download className="w-5 h-5" />
-                                    <span>Download CSV Report</span>
-                                </button>
+                        {activeTab === 'system' && (
+                            <div className="max-w-2xl mx-auto space-y-6">
+                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6">
+                                    <div>
+                                        <h2 className="font-bold text-lg text-slate-800">Restore Data dari Cloud</h2>
+                                        <p className="text-xs text-slate-500">Gunakan fitur ini jika data di aplikasi hilang atau Anda baru saja mengganti perangkat. Data akan ditarik dari Google Sheets.</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-3">
+                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Package className="w-4 h-4" /></div>
+                                                <div><p className="text-sm font-bold">Master Vaksin</p><p className="text-[10px] text-slate-400">Muat ulang daftar jenis vaksin</p></div>
+                                            </div>
+                                            <button onClick={() => restoreFromSheet('Master')} disabled={isSyncing} className={`px-4 py-2 rounded-xl text-xs font-bold transition ${isSyncing ? 'bg-slate-300' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}>Restore</button>
+                                        </div>
+                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="p-2 bg-blue-100 text-blue-700 rounded-lg"><TrendingUp className="w-4 h-4" /></div>
+                                                <div><p className="text-sm font-bold">Data Vaksin Masuk</p><p className="text-[10px] text-slate-400">Muat ulang riwayat penerimaan</p></div>
+                                            </div>
+                                            <button onClick={() => restoreFromSheet('Masuk')} disabled={isSyncing} className={`px-4 py-2 rounded-xl text-xs font-bold transition ${isSyncing ? 'bg-slate-300' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>Restore</button>
+                                        </div>
+                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="p-2 bg-rose-100 text-rose-700 rounded-lg"><TrendingDown className="w-4 h-4" /></div>
+                                                <div><p className="text-sm font-bold">Data Vaksin Keluar</p><p className="text-[10px] text-slate-400">Muat ulang riwayat pengeluaran</p></div>
+                                            </div>
+                                            <button onClick={() => restoreFromSheet('Keluar')} disabled={isSyncing} className={`px-4 py-2 rounded-xl text-xs font-bold transition ${isSyncing ? 'bg-slate-300' : 'bg-rose-600 text-white hover:bg-rose-700'}`}>Restore</button>
+                                        </div>
+                                    </div>
+                                    {isSyncing && <div className="text-center text-xs text-emerald-600 font-medium animate-pulse">Sedang menyinkronkan data...</div>}
+                                </div>
                             </div>
                         )}
                     </main>
 
-                    {/* MODAL: TAMBAH JENIS VAKSIN */}
                     {isVaxModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
@@ -414,128 +572,203 @@
                                     <button onClick={() => setIsVaxModalOpen(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
                                 </div>
                                 <form onSubmit={handleAddVaccine} className="space-y-3 text-xs">
-                                    <div>
-                                        <label className="block text-slate-600 font-semibold mb-1">Nama Vaksin *</label>
-                                        <input required type="text" value={vaxForm.name} onChange={(e) => setVaxForm({...vaxForm, name: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" placeholder="Contoh: BCG" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-slate-600 font-semibold mb-1">Kategori *</label>
-                                        <select value={vaxForm.category} onChange={(e) => setVaxForm({...vaxForm, category: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                                            <option value="Vaksin Wajib">Vaksin Wajib</option>
-                                            <option value="Vaksin Pilihan">Vaksin Pilihan</option>
-                                            <option value="Vaksin Khusus">Vaksin Khusus</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-slate-600 font-semibold mb-1">Batas Minimum Stok *</label>
-                                        <input required type="number" value={vaxForm.minStock} onChange={(e) => setVaxForm({...vaxForm, minStock: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" />
-                                    </div>
-                                    <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md">Simpan Jenis Vaksin</button>
+                                    <div><label className="block text-slate-600 font-semibold mb-1">Nama Vaksin *</label><input required type="text" value={vaxForm.name} onChange={(e) => setVaxForm({...vaxForm, name: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" placeholder="Contoh: BCG" /></div>
+                                    <div><label className="block text-slate-600 font-semibold mb-1">Kategori *</label><select value={vaxForm.category} onChange={(e) => setVaxForm({...vaxForm, category: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"><option value="Vaksin Wajib">Vaksin Wajib</option><option value="Vaksin Pilihan">Vaksin Pilihan</option><option value="Vaksin Khusus">Vaksin Khusus</option></select></div>
+                                    <div><label className="block text-slate-600 font-semibold mb-1">Batas Minimum Stok *</label><input required type="number" value={vaxForm.minStock} onChange={(e) => setVaxForm({...vaxForm, minStock: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" /></div>
+                                    <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md">Simpan Master</button>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* MODAL: TRANSAKSI BATCH */}
+                    {isEditModalOpen && editVax && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+                                <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+                                    <h3 className="font-bold text-base">Edit Batas Stok: {editVax.name}</h3>
+                                    <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
+                                </div>
+                                <form onSubmit={handleUpdateVaccine} className="space-y-3 text-xs">
+                                    <div className="p-2 bg-slate-100 rounded-lg text-slate-500 font-medium">ID: {editVax.id}</div>
+                                    <div><label className="block text-slate-600 font-semibold mb-1">Kategori</label><select value={editVax.category} onChange={(e) => setEditVax({...editVax, category: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"><option value="Vaksin Wajib">Vaksin Wajib</option><option value="Vaksin Pilihan">Vaksin Pilihan</option><option value="Vaksin Khusus">Vaksin Khusus</option></select></div>
+                                    <div><label className="block text-slate-600 font-semibold mb-1">Batas Minimum Stok *</label><input required type="number" value={editVax.minStock} onChange={(e) => setEditVax({...editVax, minStock: e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" /></div>
+                                    <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md">Update Master</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {isCsvPreviewOpen && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl max-w-6xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-hidden flex flex-col">
+                                <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+                                    <h3 className="font-bold text-lg text-slate-800">Review Data Impor CSV</h3>
+                                    <button onClick={() => setIsCsvPreviewOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+                                </div>
+                                <p className="text-xs text-slate-500 italic">Silakan periksa data di bawah ini. Anda dapat mengedit isi kolom secara langsung sebelum disimpan.</p>
+                                <div className="overflow-auto flex-1 border rounded-2xl">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead className="bg-slate-100 sticky top-0">
+                                            <tr>
+                                                <th className="p-3 border-b">Tanggal</th>
+                                                <th className="p-3 border-b">Sumber</th>
+                                                <th className="p-3 border-b">Nama Vaksin</th>
+                                                <th className="p-3 border-b">Merk</th>
+                                                <th className="p-3 border-b">Batch</th>
+                                                <th className="p-3 border-b">Exp</th>
+                                                <th className="p-3 border-b">Dosis</th>
+                                                <th className="p-3 border-b">Satuan</th>
+                                                <th className="p-3 border-b">Jumlah</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {csvPreviewItems.map((item, idx) => (
+                                                <tr key={item.tempId} className="hover:bg-slate-50">
+                                                    <td className="p-2 border-b"><input type="date" value={item.date} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].date = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.source} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].source = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.vaxName} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].vaxName = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded font-bold" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.producer} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].producer = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.batchNo} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].batchNo = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded uppercase" /></td>
+                                                    <td className="p-2 border-b"><input type="date" value={item.expireDate} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].expireDate = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.dose} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].dose = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="text" value={item.unit} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].unit = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded" /></td>
+                                                    <td className="p-2 border-b"><input type="number" value={item.qty} onChange={(e) => {
+                                                        const n = [...csvPreviewItems]; n[idx].qty = e.target.value; setCsvPreviewItems(n);
+                                                    }} className="w-full p-1 border rounded" /></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-4">
+                                    <button onClick={() => setIsCsvPreviewOpen(false)} className="px-6 py-2 bg-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-300 transition">Batal</button>
+                                    <button onClick={confirmCsvImport} disabled={isSyncing} className={`px-6 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow-md transition ${isSyncing ? 'bg-slate-400 cursor-not-allowed' : 'hover:bg-emerald-700'}`}>
+                                        {isSyncing ? 'Menyimpan...' : 'Konfirmasi & Simpan'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {isEditTxModalOpen && editTx && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                                <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+                                    <h3 className="font-bold text-base">Edit Transaksi {editTx.type === 'masuk' ? 'Masuk' : 'Keluar'}</h3>
+                                    <button onClick={() => setIsEditTxModalOpen(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
+                                </div>
+                                <form onSubmit={handleUpdateTx} className="space-y-3 text-xs">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-slate-600 font-semibold mb-1">Tanggal</label>
+                                            <input required type="date" value={superFormatDate(editTx.date)} onChange={(e) => setEditTx({...editTx, date: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-slate-600 font-semibold mb-1">Sumber/Untuk</label>
+                                            <input required type="text" value={editTx.sourceOrFor} onChange={(e) => setEditTx({...editTx, sourceOrFor: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-slate-600 font-semibold mb-1">Jumlah</label>
+                                        <input required type="number" value={editTx.qty} onChange={(e) => setEditTx({...editTx, qty: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg" />
+                                    </div>
+                                    {editTx.type === 'masuk' && (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-slate-600 font-semibold mb-1">No Batch</label>
+                                                <input type="text" value={editTx.batchNo} onChange={(e) => setEditTx({...editTx, batchNo: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg uppercase" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-slate-600 font-semibold mb-1">Exp Date</label>
+                                                <input type="date" value={superFormatDate(editTx.expireDate)} onChange={(e) => setEditTx({...editTx, expireDate: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg" />
+                                            </div>
+                                        </div>
+                                    )}
+                                    <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">Simpan Perubahan</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
                     {isTxModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
                                 <div className="flex justify-between items-center border-b pb-3 border-slate-100">
-                                    <h3 className="font-bold text-base">Pencatatan Mutasi Vaksin</h3>
+                                    <h3 className="font-bold text-base">Catat Mutasi (Batch Entry)</h3>
                                     <button onClick={() => setIsTxModalOpen(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
                                 </div>
-
                                 <div className="flex gap-2 mb-4">
                                     <button onClick={() => { setTxType('masuk'); setTxItems([{}]); }} className={`flex-1 py-2 rounded-xl font-bold transition ${txType === 'masuk' ? 'bg-emerald-600 text-white shadow' : 'bg-slate-100 text-slate-600'}`}>VAKSIN MASUK</button>
                                     <button onClick={() => { setTxType('keluar'); setTxItems([{}]); }} className={`flex-1 py-2 rounded-xl font-bold transition ${txType === 'keluar' ? 'bg-rose-600 text-white shadow' : 'bg-slate-100 text-slate-600'}`}>VAKSIN KELUAR</button>
                                 </div>
-
                                 <form onSubmit={handleSaveTransactions} className="space-y-4 text-xs">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                                        <div>
-                                            <label className="block font-semibold mb-1">Tanggal Mutasi *</label>
-                                            <input required type="date" value={txHeader.date} onChange={(e) => setTxHeader({...txHeader, date: e.target.value})} className="w-full p-2 bg-white border rounded-lg" />
-                                        </div>
-                                        <div>
-                                            <label className="block font-semibold mb-1">{txType === 'masuk' ? 'Sumber Vaksin *' : 'Peruntukan/Tujuan *'}</label>
-                                            <input required type="text" value={txHeader.sourceOrFor} onChange={(e) => setTxHeader({...txHeader, sourceOrFor: e.target.value})} className="w-full p-2 bg-white border rounded-lg" placeholder={txType === 'masuk' ? 'Contoh: Dinkes Kota' : 'Contoh: Puskesmas A'} />
-                                        </div>
+                                        <div><label className="block font-semibold mb-1">Tanggal *</label><input required type="date" value={txHeader.date} onChange={(e) => setTxHeader({...txHeader, date: e.target.value})} className="w-full p-2 bg-white border rounded-lg" /></div>
+                                        <div><label className="block font-semibold mb-1">{txType === 'masuk' ? 'Sumber Vaksin *' : 'Peruntukan *'}</label><input required type="text" value={txHeader.sourceOrFor} onChange={(e) => setTxHeader({...txHeader, sourceOrFor: e.target.value})} className="w-full p-2 bg-white border rounded-lg" placeholder="Contoh: Dinkes / Puskesmas A" /></div>
                                     </div>
-
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left border-collapse">
-                                            <thead>
-                                                <tr className="text-slate-500">
-                                                    <th className="p-2 border-b">Vaksin</th>
-                                                    {txType === 'masuk' ? (
-                                                        <>
-                                                            <th className="p-2 border-b">Merk/Produsen</th>
-                                                            <th className="p-2 border-b">No. Batch</th>
-                                                            <th className="p-2 border-b">Kadaluarsa</th>
-                                                            <th className="p-2 border-b">Dosis</th>
-                                                            <th className="p-2 border-b">Satuan</th>
-                                                        </>
-                                                    ) : (
-                                                        <th className="p-2 border-b">Lot ID (FEFO)</th>
-                                                    )}
-                                                    <th className="p-2 border-b">Jumlah</th>
-                                                    <th className="p-2 border-b w-10"></th>
-                                                </tr>
-                                            </thead>
+                                            <thead><tr className="text-slate-500"><th className="p-2 border-b">Vaksin</th>{txType === 'masuk' ? (<><th className="p-2 border-b">Merk</th><th className="p-2 border-b">Batch</th><th className="p-2 border-b">Kadaluarsa</th><th className="p-2 border-b">Dosis</th><th className="p-2 border-b">Satuan</th></>) : (<th className="p-2 border-b">ID Masuk (Lot ID)</th>)}<th className="p-2 border-b">Jumlah</th><th className="p-2 border-b w-10"></th></tr></thead>
                                             <tbody>
                                                 {txItems.map((item, idx) => (
-                                                    <tr key={idx} className="group">
-                                                        <td className="p-2 border-b">
-                                                            <select required value={item.vaccineId} onChange={(e) => handleItemChange(idx, 'vaccineId', e.target.value)} className="w-full p-1.5 bg-slate-50 border rounded">
-                                                                <option value="">-- Pilih --</option>
-                                                                {vaccines.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                                                            </select>
-                                                        </td>
+                                                    <tr key={idx}>
+                                                        <td className="p-2 border-b"><select required value={item.vaccineId} onChange={(e) => {
+                                                            const newItems = [...txItems]; newItems[idx].vaccineId = e.target.value; setTxItems(newItems);
+                                                        }} className="w-full p-1.5 bg-slate-50 border rounded">
+                                                            <option value="">-- Pilih --</option>
+                                                            {vaccines.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                                        </select></td>
                                                         {txType === 'masuk' ? (
                                                             <>
-                                                                <td className="p-2 border-b"><input type="text" value={item.producer} onChange={(e) => handleItemChange(idx, 'producer', e.target.value)} className="w-full p-1.5 border rounded" /></td>
-                                                                <td className="p-2 border-b"><input type="text" value={item.batchNo} onChange={(e) => handleItemChange(idx, 'batchNo', e.target.value)} className="w-full p-1.5 border rounded uppercase" /></td>
-                                                                <td className="p-2 border-b"><input type="date" value={item.expireDate} onChange={(e) => handleItemChange(idx, 'expireDate', e.target.value)} className="w-full p-1.5 border rounded" /></td>
-                                                                <td className="p-2 border-b"><input type="text" value={item.dose} onChange={(e) => handleItemChange(idx, 'dose', e.target.value)} className="w-full p-1.5 border rounded" placeholder="0.5ml" /></td>
-                                                                <td className="p-2 border-b"><input type="text" value={item.unit} onChange={(e) => handleItemChange(idx, 'unit', e.target.value)} className="w-full p-1.5 border rounded" placeholder="Dosis" /></td>
+                                                                <td className="p-2 border-b"><input type="text" value={item.producer} onChange={(e) => { const n = [...txItems]; n[idx].producer = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
+                                                                <td className="p-2 border-b"><input type="text" value={item.batchNo} onChange={(e) => { const n = [...txItems]; n[idx].batchNo = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded uppercase" /></td>
+                                                                <td className="p-2 border-b"><input type="date" value={item.expireDate} onChange={(e) => { const n = [...txItems]; n[idx].expireDate = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
+                                                                <td className="p-2 border-b"><input type="text" value={item.dose} onChange={(e) => { const n = [...txItems]; n[idx].dose = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" placeholder="0.5ml" /></td>
+                                                                <td className="p-2 border-b"><input type="text" value={item.unit} onChange={(e) => { const n = [...txItems]; n[idx].unit = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" placeholder="Dosis" /></td>
                                                             </>
                                                         ) : (
-                                                            <td className="p-2 border-b">
-                                                                <select required value={item.lotId} onChange={(e) => handleItemChange(idx, 'lotId', e.target.value)} className="w-full p-1.5 border rounded">
-                                                                    <option value="">-- Pilih Lot --</option>
-                                                                    {calculatedStock.find(v => v.id === item.vaccineId)?.lots.filter(l => l.currentStock > 0).map(l => (
-                                                                        <option key={l.lotId} value={l.lotId}>{l.lotId} (Sisa: {l.currentStock})</option>
-                                                                    ))}
-                                                                </select>
-                                                            </td>
+                                                            <td className="p-2 border-b"><select required value={item.lotId} onChange={(e) => { const n = [...txItems]; n[idx].lotId = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded">
+                                                                <option value="">-- Pilih ID Masuk --</option>
+                                                                {calculatedStock.find(v => v.id === item.vaccineId)?.lots.filter(l => l.currentStock > 0).map(l => <option key={l.lotId} value={l.lotId}>{l.lotId} (Sisa: {l.currentStock})</option>)}
+                                                            </select></td>
                                                         )}
-                                                        <td className="p-2 border-b">
-                                                            <input required type="number" value={item.qty} onChange={(e) => handleItemChange(idx, 'qty', e.target.value)} className="w-full p-1.5 border rounded" />
-                                                        </td>
-                                                        <td className="p-2 border-b text-center">
-                                                            <button type="button" onClick={() => handleRemoveItem(idx)} className="text-rose-400 hover:text-rose-600"><Trash2 className="w-4 h-4" /></button>
-                                                        </td>
+                                                        <td className="p-2 border-b"><input required type="number" value={item.qty} onChange={(e) => { const n = [...txItems]; n[idx].qty = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
+                                                        <td className="p-2 border-b text-center"><button type="button" onClick={() => { const n = [...txItems]; n.splice(idx,1); setTxItems(n.length ? n : [{}]); }} className="text-rose-400"><Trash2 className="w-4 h-4" /></button></td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     </div>
-                                    <button type="button" onClick={handleAddItem} className="flex items-center space-x-1 text-emerald-600 font-bold py-2 px-4 rounded-lg border border-emerald-600 hover:bg-emerald-50 transition">
-                                        <PlusCircle className="w-4 h-4" />
-                                        <span>Tambah Baris Vaksin</span>
+                                    <button type="button" onClick={() => setTxItems([...txItems, {}])} className="flex items-center space-x-1 text-emerald-600 font-bold py-2 px-4 rounded-lg border border-emerald-600 hover:bg-emerald-50 transition"><PlusCircle className="w-4 h-4" /><span>Tambah Baris</span></button>
+                                    <button type="submit" disabled={isSyncing} className={`w-full py-3 text-white font-bold rounded-xl shadow-md transition ${isSyncing ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                                        {isSyncing ? 'Sedang Mengirim Data...' : 'Simpan & Sync Cloud'}
                                     </button>
-                                    <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition">Simpan Semua Mutasi</button>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* MOBILE NAV */}
                     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-2 flex justify-around items-center md:hidden z-30 shadow-lg">
                         <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center space-y-1 ${activeTab === 'dashboard' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><LayoutDashboard className="w-5 h-5" /><span className="text-[10px]">Dashboard</span></button>
                         <button onClick={() => setActiveTab('stock')} className={`flex flex-col items-center space-y-1 ${activeTab === 'stock' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><Package className="w-5 h-5" /><span className="text-[10px]">Stok & Lot</span></button>
                         <button onClick={() => setActiveTab('transactions')} className={`flex flex-col items-center space-y-1 ${activeTab === 'transactions' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><ArrowLeftRight className="w-5 h-5" /><span className="text-[10px]">Transaksi</span></button>
-                        <button onClick={() => setActiveTab('export')} className={`flex flex-col items-center space-y-1 ${activeTab === 'export' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><Download className="w-5 h-5" /><span className="text-[10px]">CSV</span></button>
+                        <button onClick={() => setActiveTab('system')} className={`flex flex-col items-center space-y-1 ${activeTab === 'system' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><RefreshCcw className="w-5 h-5" /><span className="text-[10px]">Sistem</span></button>
                     </nav>
                 </div>
             );
