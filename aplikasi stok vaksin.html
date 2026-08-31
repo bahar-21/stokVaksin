@@ -1,0 +1,1141 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  LayoutDashboard, 
+  Package, 
+  ArrowLeftRight, 
+  PlusCircle, 
+  Download, 
+  AlertTriangle, 
+  Search, 
+  TrendingUp, 
+  TrendingDown, 
+  Syringe,
+  Trash2,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  ShieldCheck,
+  Tag
+} from 'lucide-react';
+
+// Sample Data Awal Master Vaksin
+const initialVaccines = [
+  { id: '1', name: 'BCG', type: 'Vaksin Wajib', producer: 'Bio Farma', minStock: 20 },
+  { id: '2', name: 'MR (Measles Rubella)', type: 'Vaksin Wajib', producer: 'Serum Institute of India (SII)', minStock: 15 },
+  { id: '3', name: 'DPT-HB-Hib', type: 'Vaksin Wajib', producer: 'Bio Farma', minStock: 30 },
+  { id: '4', name: 'Hepatitis B Recombinant', type: 'Vaksin Wajib', producer: 'Bio Farma', minStock: 25 },
+];
+
+// Sample Transaksi Awal dengan Lot ID (Internal Tracking ID)
+const initialTransactions = [
+  {
+    id: 'TX-1001',
+    vaccineId: '1',
+    vaccineName: 'BCG',
+    lotId: 'BCG-LOT-01',
+    type: 'masuk',
+    dose: '0.05 ml',
+    batchNo: 'BCG-2026-A1',
+    expireDate: '2026-09-15', // Mendekati ED (< 30 hari)
+    producer: 'Bio Farma',
+    qty: 30,
+    date: '2026-07-10',
+    notes: 'Penerimaan Dinkes Tahap 1'
+  },
+  {
+    id: 'TX-1002',
+    vaccineId: '1',
+    vaccineName: 'BCG',
+    lotId: 'BCG-LOT-02',
+    type: 'masuk',
+    dose: '0.05 ml',
+    batchNo: 'BCG-2026-B2',
+    expireDate: '2027-02-20',
+    producer: 'Bio Farma',
+    qty: 50,
+    date: '2026-08-01',
+    notes: 'Penerimaan Dinkes Tahap 2'
+  },
+  {
+    id: 'TX-1003',
+    vaccineId: '1',
+    vaccineName: 'BCG',
+    lotId: 'BCG-LOT-01',
+    type: 'keluar',
+    dose: '0.05 ml',
+    batchNo: 'BCG-2026-A1',
+    expireDate: '2026-09-15',
+    producer: 'Bio Farma',
+    qty: 10,
+    date: '2026-08-15',
+    notes: 'Imunisasi Bayi Puskesmas'
+  },
+  {
+    id: 'TX-1004',
+    vaccineId: '2',
+    vaccineName: 'MR (Measles Rubella)',
+    lotId: 'MR-LOT-01',
+    type: 'masuk',
+    dose: '0.5 ml',
+    batchNo: 'MR-SII-882',
+    expireDate: '2026-11-30',
+    producer: 'Serum Institute of India (SII)',
+    qty: 40,
+    date: '2026-08-05',
+    notes: 'Stok Rutin Posyandu'
+  }
+];
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // State Master & Transaksi
+  const [vaccines, setVaccines] = useState(() => {
+    const saved = localStorage.getItem('vax_master_lot');
+    return saved ? JSON.parse(saved) : initialVaccines;
+  });
+
+  const [transactions, setTransactions] = useState(() => {
+    const saved = localStorage.getItem('vax_tx_lot');
+    return saved ? JSON.parse(saved) : initialTransactions;
+  });
+
+  // State UI & Filter
+  const [isTxModalOpen, setIsTxModalOpen] = useState(false);
+  const [isVaxModalOpen, setIsVaxModalOpen] = useState(false);
+  const [expandedVaxId, setExpandedVaxId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState('all');
+
+  // Form State
+  const [txForm, setTxForm] = useState({
+    vaccineId: '',
+    type: 'masuk',
+    lotId: '',
+    dose: '0.5 ml',
+    batchNo: '',
+    expireDate: '',
+    producer: '',
+    qty: '',
+    notes: ''
+  });
+
+  const [vaxForm, setVaxForm] = useState({
+    name: '',
+    type: 'Vaksin Wajib',
+    producer: 'Bio Farma',
+    minStock: 10
+  });
+
+  // Sync LocalStorage
+  useEffect(() => {
+    localStorage.setItem('vax_master_lot', JSON.stringify(vaccines));
+  }, [vaccines]);
+
+  useEffect(() => {
+    localStorage.setItem('vax_tx_lot', JSON.stringify(transactions));
+  }, [transactions]);
+
+  // -------------------------------------------------------------
+  // PERHITUNGAN STOK KELOLAAN BERDASARKAN LOT ID UNIK
+  // -------------------------------------------------------------
+  const getCalculatedStock = () => {
+    const today = new Date();
+
+    return vaccines.map((vax) => {
+      const vaxTxs = transactions.filter(t => t.vaccineId === vax.id);
+      
+      // Hitung per-LOT ID
+      const lotMap = {};
+
+      vaxTxs.forEach((tx) => {
+        const key = tx.lotId || `${tx.batchNo}`;
+        if (!lotMap[key]) {
+          lotMap[key] = {
+            lotId: key,
+            batchNo: tx.batchNo,
+            expireDate: tx.expireDate,
+            producer: tx.producer || vax.producer,
+            masuk: 0,
+            keluar: 0,
+            currentStock: 0
+          };
+        }
+
+        if (tx.type === 'masuk') {
+          lotMap[key].masuk += Number(tx.qty);
+        } else {
+          lotMap[key].keluar += Number(tx.qty);
+        }
+        
+        lotMap[key].currentStock = lotMap[key].masuk - lotMap[key].keluar;
+      });
+
+      // Konversi ke array & Urutkan berdasarkan ED Terdekat (FEFO)
+      const lots = Object.values(lotMap)
+        .filter(l => l.currentStock > 0 || l.masuk > 0)
+        .sort((a, b) => new Date(a.expireDate) - new Date(b.expireDate));
+
+      const totalMasuk = lots.reduce((sum, l) => sum + l.masuk, 0);
+      const totalKeluar = lots.reduce((sum, l) => sum + l.keluar, 0);
+      const currentStock = totalMasuk - totalKeluar;
+
+      // Cek batch hampir kadaluarsa (< 30 Hari)
+      const nearExpLots = lots.filter(l => {
+        if (l.currentStock <= 0) return false;
+        const exp = new Date(l.expireDate);
+        const diffDays = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+        return diffDays <= 30;
+      });
+
+      return {
+        ...vax,
+        lots,
+        totalMasuk,
+        totalKeluar,
+        currentStock,
+        isLowStock: currentStock <= (vax.minStock || 10),
+        nearExpLots
+      };
+    });
+  };
+
+  const calculatedStock = getCalculatedStock();
+
+  // Ambil daftar LOT aktif untuk vaksin yang dipilih (Khusus Transaksi Keluar)
+  const selectedVaxStockInfo = txForm.vaccineId 
+    ? calculatedStock.find(s => s.id === txForm.vaccineId)
+    : null;
+
+  const availableLotsForKeluar = selectedVaxStockInfo
+    ? selectedVaxStockInfo.lots.filter(l => l.currentStock > 0)
+    : [];
+
+  // Handler Saat Jenis Vaksin Dipilih
+  const handleVaccineSelection = (vaxId) => {
+    const vax = vaccines.find(v => v.id === vaxId);
+    setTxForm(prev => ({
+      ...prev,
+      vaccineId: vaxId,
+      producer: vax ? vax.producer : '',
+      lotId: '',
+      batchNo: '',
+      expireDate: ''
+    }));
+  };
+
+  // HANDLER UTAMA: Saat ID Lot Dipilih pada Transaksi Keluar
+  // Otomatis Mengisi No. Batch, Tanggal Kadaluarsa, & Produsen
+  const handleLotSelectionForKeluar = (lotId) => {
+    const lot = availableLotsForKeluar.find(l => l.lotId === lotId);
+    if (lot) {
+      setTxForm(prev => ({
+        ...prev,
+        lotId: lot.lotId,
+        batchNo: lot.batchNo,
+        expireDate: lot.expireDate,
+        producer: lot.producer
+      }));
+    } else {
+      setTxForm(prev => ({
+        ...prev,
+        lotId: '',
+        batchNo: '',
+        expireDate: ''
+      }));
+    }
+  };
+
+  // Submit Transaksi Baru
+  const handleAddTransaction = (e) => {
+    e.preventDefault();
+
+    if (!txForm.vaccineId || !txForm.qty || !txForm.batchNo || !txForm.expireDate) {
+      alert('Mohon lengkapi seluruh field berbintang (*)');
+      return;
+    }
+
+    const selectedVax = vaccines.find(v => v.id === txForm.vaccineId);
+
+    // Generate Auto Lot ID jika transaksi MASUK baru
+    let finalLotId = txForm.lotId;
+    if (txForm.type === 'masuk' && !finalLotId) {
+      // Format Otomatis ID Lot: [NAMA VAKSIN]-LOT-[INCREMENT]
+      const existingLotsCount = selectedVaxStockInfo ? selectedVaxStockInfo.lots.length : 0;
+      finalLotId = `${selectedVax ? selectedVax.name.replace(/\s+/g, '').toUpperCase() : 'VAX'}-LOT-0${existingLotsCount + 1}`;
+    }
+
+    // Validasi stok jika KELUAR
+    if (txForm.type === 'keluar') {
+      const targetLot = availableLotsForKeluar.find(l => l.lotId === txForm.lotId);
+      const maxAvailable = targetLot ? targetLot.currentStock : 0;
+
+      if (Number(txForm.qty) > maxAvailable) {
+        alert(`Stok tidak mencukupi untuk Lot ID [${txForm.lotId}]! Sisa stok aktif lot ini: ${maxAvailable} dosis.`);
+        return;
+      }
+    }
+
+    const newTx = {
+      id: `TX-${Date.now().toString().slice(-5)}`,
+      vaccineId: txForm.vaccineId,
+      vaccineName: selectedVax ? selectedVax.name : 'Unknown',
+      lotId: finalLotId,
+      type: txForm.type,
+      dose: txForm.dose || '0.5 ml',
+      batchNo: txForm.batchNo.trim().toUpperCase(),
+      expireDate: txForm.expireDate,
+      producer: txForm.producer || selectedVax?.producer || '-',
+      qty: Number(txForm.qty),
+      date: new Date().toISOString().split('T')[0],
+      notes: txForm.notes
+    };
+
+    setTransactions([newTx, ...transactions]);
+    setIsTxModalOpen(false);
+    
+    // Reset Form
+    setTxForm({
+      vaccineId: '',
+      type: 'masuk',
+      lotId: '',
+      dose: '0.5 ml',
+      batchNo: '',
+      expireDate: '',
+      producer: '',
+      qty: '',
+      notes: ''
+    });
+  };
+
+  // Submit Master Vaksin
+  const handleAddVaccine = (e) => {
+    e.preventDefault();
+    if (!vaxForm.name) return;
+
+    const newVax = {
+      id: Date.now().toString(),
+      name: vaxForm.name,
+      type: vaxForm.type,
+      producer: vaxForm.producer || 'Bio Farma',
+      minStock: Number(vaxForm.minStock) || 10
+    };
+
+    setVaccines([...vaccines, newVax]);
+    setIsVaxModalOpen(false);
+    setVaxForm({ name: '', type: 'Vaksin Wajib', producer: 'Bio Farma', minStock: 10 });
+  };
+
+  const handleDeleteTx = (id) => {
+    if (confirm('Yakin ingin menghapus riwayat transaksi ini?')) {
+      setTransactions(transactions.filter(t => t.id !== id));
+    }
+  };
+
+  // CSV Export
+  const downloadCSV = (type) => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    
+    if (type === 'transactions') {
+      csvContent += "ID Transaksi,Tanggal,Jenis,Nama Vaksin,Lot ID,Dosis,No Batch,Kadaluarsa,Produsen,Jumlah,Catatan\n";
+      transactions.forEach(t => {
+        csvContent += `"${t.id}","${t.date}","${t.type.toUpperCase()}","${t.vaccineName}","${t.lotId}","${t.dose}","${t.batchNo}","${t.expireDate}","${t.producer}","${t.qty}","${t.notes || '-'}"\n`;
+      });
+    } else {
+      csvContent += "Nama Vaksin,Kategori,Lot ID,No Batch,Tanggal Kadaluarsa,Produsen,Sisa Dosis Lot,Total Stok Vaksin\n";
+      calculatedStock.forEach(s => {
+        if (s.lots.length === 0) {
+          csvContent += `"${s.name}","${s.type}","-","-","-","${s.producer}","0","0"\n`;
+        } else {
+          s.lots.forEach(l => {
+            csvContent += `"${s.name}","${s.type}","${l.lotId}","${l.batchNo}","${l.expireDate}","${l.producer}","${l.currentStock}","${s.currentStock}"\n`;
+          });
+        }
+      });
+    }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Laporan_${type}_Vaksin_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Metrik Dashboard
+  const totalDoses = calculatedStock.reduce((acc, curr) => acc + curr.currentStock, 0);
+  const lowStockCount = calculatedStock.filter(s => s.isLowStock).length;
+  
+  const allNearExpLots = [];
+  calculatedStock.forEach(s => {
+    s.nearExpLots.forEach(l => {
+      allNearExpLots.push({
+        vaccineName: s.name,
+        ...l
+      });
+    });
+  });
+
+  const filteredStock = calculatedStock.filter(v => {
+    const matchSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                        v.producer.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchType = filterType === 'all' || v.type === filterType;
+    return matchSearch && matchType;
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-20 md:pb-8">
+      
+      {/* HEADER */}
+      <header className="bg-emerald-600 text-white shadow-md sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+              <Syringe className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-lg leading-tight">VaxTrack Lot System</h1>
+              <p className="text-xs text-emerald-100">Manajemen Stok & Identifikasi Lot Vaksin</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setIsTxModalOpen(true)}
+            className="hidden sm:flex items-center space-x-2 bg-white text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-xl font-medium text-sm shadow transition"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Catat Keluar/Masuk</span>
+          </button>
+        </div>
+      </header>
+
+      {/* CONTAINER KONTEN UTAMA */}
+      <main className="max-w-6xl mx-auto px-4 pt-4">
+
+        {/* TAB NAVIGATION (DESKTOP) */}
+        <div className="hidden md:flex space-x-2 mb-6 border-b border-slate-200 pb-2">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition ${
+              activeTab === 'dashboard' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>Dashboard</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('stock')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition ${
+              activeTab === 'stock' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            <span>Stok Realtime & Rincian Lot ID</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('transactions')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition ${
+              activeTab === 'transactions' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <ArrowLeftRight className="w-4 h-4" />
+            <span>Riwayat Transaksi</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('export')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition ${
+              activeTab === 'export' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Download className="w-4 h-4" />
+            <span>Export CSV</span>
+          </button>
+        </div>
+
+        {/* ----------------- TAB: DASHBOARD ----------------- */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6">
+            
+            {/* CARDS SUMMARY */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Stok Tersedia</span>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="text-2xl md:text-3xl font-extrabold text-slate-800">{totalDoses}</span>
+                  <span className="text-xs font-medium text-slate-500">Dosis</span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Jenis Vaksin</span>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="text-2xl md:text-3xl font-extrabold text-emerald-600">{vaccines.length}</span>
+                  <span className="text-xs font-medium text-slate-500">Master Item</span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <span className="text-xs font-semibold text-amber-500 uppercase tracking-wider">Stok Menipis</span>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="text-2xl md:text-3xl font-extrabold text-amber-600">{lowStockCount}</span>
+                  <span className="text-xs font-medium text-amber-600">Perlu Restok</span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <span className="text-xs font-semibold text-rose-500 uppercase tracking-wider">Lot Kadaluarsa</span>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="text-2xl md:text-3xl font-extrabold text-rose-600">{allNearExpLots.length}</span>
+                  <span className="text-xs font-medium text-rose-600">Lot &lt; 30 Hari</span>
+                </div>
+              </div>
+            </div>
+
+            {/* QUICK ACTIONS MOBILE */}
+            <div className="flex gap-2 sm:hidden">
+              <button
+                onClick={() => setIsTxModalOpen(true)}
+                className="flex-1 bg-emerald-600 text-white font-medium py-2.5 rounded-xl text-sm flex items-center justify-center space-x-2 shadow-sm"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Catat Mutasi Vaksin</span>
+              </button>
+            </div>
+
+            {/* ALERT BATCH/LOT HAMPIR KADALUARSA (FEFO ALERT) */}
+            {allNearExpLots.length > 0 && (
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center space-x-2 text-rose-700 font-semibold text-sm">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Peringatan FEFO: Lot ID Mendekati Kadaluarsa (&lt; 30 Hari)</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {allNearExpLots.map((lot, idx) => (
+                    <div key={idx} className="bg-white p-3 rounded-xl border border-rose-100 text-xs flex justify-between items-center shadow-sm">
+                      <div>
+                        <div className="flex items-center space-x-1.5">
+                          <Tag className="w-3 h-3 text-rose-600" />
+                          <span className="font-bold text-slate-800">{lot.vaccineName}</span>
+                          <span className="bg-slate-100 text-slate-700 font-mono px-1.5 py-0.2 rounded font-bold text-[10px]">{lot.lotId}</span>
+                        </div>
+                        <p className="text-slate-500 mt-0.5">Batch: <span className="font-mono text-slate-700 font-bold">{lot.batchNo}</span> ({lot.producer})</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold text-[10px]">
+                          EXP: {lot.expireDate}
+                        </span>
+                        <p className="text-slate-700 font-extrabold mt-1">{lot.currentStock} Dosis</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* RINGKASAN STOK VAKSIN */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="font-bold text-slate-800 text-base">Stok Kumulatif Vaksin</h2>
+                <button
+                  onClick={() => setActiveTab('stock')}
+                  className="text-xs font-semibold text-emerald-600 hover:underline"
+                >
+                  Lihat Detail Per Lot ID
+                </button>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {calculatedStock.map((vax) => (
+                  <div key={vax.id} className="py-3 flex justify-between items-center text-sm">
+                    <div>
+                      <p className="font-semibold text-slate-800">{vax.name}</p>
+                      <p className="text-xs text-slate-400">
+                        {vax.producer} • <span className="text-slate-600 font-medium">{vax.lots.filter(l => l.currentStock > 0).length} Lot ID Aktif</span>
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`font-extrabold text-base ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>
+                        {vax.currentStock}
+                      </span>
+                      <span className="text-xs text-slate-400 ml-1">Dosis</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ----------------- TAB: STOK REALTIME & URAIAN LOT ID ----------------- */}
+        {activeTab === 'stock' && (
+          <div className="space-y-4">
+            
+            {/* SEARCH & FILTER */}
+            <div className="flex flex-col sm:flex-row gap-2 justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari vaksin atau produsen..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex gap-2 w-full sm:w-auto">
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 focus:outline-none"
+                >
+                  <option value="all">Semua Kategori</option>
+                  <option value="Vaksin Wajib">Vaksin Wajib</option>
+                  <option value="Vaksin Pilihan">Vaksin Pilihan</option>
+                </select>
+
+                <button
+                  onClick={() => setIsVaxModalOpen(true)}
+                  className="bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center space-x-1 whitespace-nowrap"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Tambah Jenis Vaksin</span>
+                </button>
+              </div>
+            </div>
+
+            {/* LIST STOK INDUK DENGAN SUB-LEVEL RINCIAN LOT ID */}
+            <div className="space-y-3">
+              {filteredStock.map((vax) => {
+                const isExpanded = expandedVaxId === vax.id;
+                const activeLotsCount = vax.lots.filter(l => l.currentStock > 0).length;
+
+                return (
+                  <div key={vax.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden transition">
+                    
+                    {/* LEVEL INDUK (KUMULATIF VAKSIN) */}
+                    <div 
+                      onClick={() => setExpandedVaxId(isExpanded ? null : vax.id)}
+                      className="p-4 flex justify-between items-center cursor-pointer hover:bg-slate-50/80 transition"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className="bg-emerald-50 text-emerald-700 p-2.5 rounded-xl hidden sm:block">
+                          <Package className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <h3 className="font-bold text-slate-800 text-sm md:text-base">{vax.name}</h3>
+                            <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-medium">
+                              {vax.type}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Produsen: <span className="text-slate-600">{vax.producer}</span> • Terdaftar <span className="font-bold text-slate-700">{activeLotsCount} Lot ID Aktif</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-4">
+                        <div className="text-right">
+                          <p className="text-[10px] text-slate-400 font-medium">TOTAL STOK</p>
+                          <span className={`text-lg md:text-xl font-black ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>
+                            {vax.currentStock} <span className="text-xs font-normal text-slate-500">Dosis</span>
+                          </span>
+                        </div>
+
+                        <button className="text-slate-400 p-1">
+                          {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* URAIAN RINCIAN PER LOT ID */}
+                    {isExpanded && (
+                      <div className="bg-slate-50/70 border-t border-slate-100 p-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs font-bold text-slate-600 flex items-center space-x-1">
+                            <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Rincian Uraian Per-Lot ID (Urutan FEFO / Kadaluarsa Terdekat)</span>
+                          </p>
+                        </div>
+
+                        {vax.lots.length === 0 ? (
+                          <p className="text-xs text-slate-400 italic py-2">Belum ada stok/lot aktif untuk vaksin ini.</p>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                            {vax.lots.map((lot) => {
+                              const expDate = new Date(lot.expireDate);
+                              const diffDays = Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24));
+                              const isNearExp = diffDays <= 30;
+
+                              return (
+                                <div 
+                                  key={lot.lotId} 
+                                  className={`p-3 rounded-xl bg-white border text-xs shadow-xs ${
+                                    isNearExp ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200'
+                                  }`}
+                                >
+                                  <div className="flex justify-between items-start mb-1">
+                                    <span className="bg-emerald-50 text-emerald-800 font-mono font-extrabold px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                                      ID: {lot.lotId}
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                                      isNearExp ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                                    }`}>
+                                      EXP: {lot.expireDate}
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-0.5 text-slate-500">
+                                    <p><span className="text-slate-400">No. Batch:</span> <b className="font-mono text-slate-700">{lot.batchNo}</b></p>
+                                    <p><span className="text-slate-400">Produsen:</span> {lot.producer}</p>
+                                  </div>
+
+                                  <div className="mt-3 flex justify-between items-end border-t pt-2 border-slate-100">
+                                    <div className="text-[11px] text-slate-500">
+                                      <span>+Masuk: {lot.masuk}</span> | <span>-Keluar: {lot.keluar}</span>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="font-extrabold text-slate-800 text-sm">{lot.currentStock}</span>
+                                      <span className="text-[10px] text-slate-400 ml-0.5">Dosis</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
+        )}
+
+        {/* ----------------- TAB: RIWAYAT TRANSAKSI ----------------- */}
+        {activeTab === 'transactions' && (
+          <div className="space-y-4">
+            
+            <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+              <h2 className="font-bold text-slate-800 text-sm md:text-base">Catatan Mutasi Keluar & Masuk</h2>
+              <button
+                onClick={() => setIsTxModalOpen(true)}
+                className="bg-emerald-600 text-white text-xs font-semibold px-3 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center space-x-1"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>Tambah Transaksi</span>
+              </button>
+            </div>
+
+            {/* LIST LOG TRANSAKSI */}
+            <div className="space-y-2">
+              {transactions.map((tx) => (
+                <div key={tx.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                  
+                  <div className="flex items-start space-x-3">
+                    <div className={`p-2.5 rounded-xl mt-0.5 ${tx.type === 'masuk' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                      {tx.type === 'masuk' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-sm text-slate-800">{tx.vaccineName}</span>
+                        <span className="bg-slate-100 text-slate-700 font-mono font-bold px-1.5 py-0.5 rounded text-[10px]">
+                          {tx.lotId}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                          tx.type === 'masuk' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}>
+                          {tx.type.toUpperCase()}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-slate-500">
+                        <div><span className="text-slate-400">No. Batch:</span> <span className="font-mono text-slate-800 font-bold">{tx.batchNo}</span></div>
+                        <div><span className="text-slate-400">Dosis:</span> {tx.dose}</div>
+                        <div><span className="text-slate-400">Produsen:</span> {tx.producer}</div>
+                        <div><span className="text-slate-400">Kadaluarsa:</span> <span className="text-rose-600 font-semibold">{tx.expireDate}</span></div>
+                      </div>
+
+                      {tx.notes && <p className="mt-1 text-slate-400 italic">" {tx.notes} "</p>}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between md:flex-col md:items-end border-t md:border-t-0 pt-2 md:pt-0 border-slate-100">
+                    <div className="text-left md:text-right">
+                      <span className="text-slate-400 text-[10px] block">{tx.date}</span>
+                      <span className={`font-black text-base ${tx.type === 'masuk' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {tx.type === 'masuk' ? '+' : '-'}{tx.qty} Dosis
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleDeleteTx(tx.id)}
+                      className="text-slate-300 hover:text-rose-600 p-1 transition"
+                      title="Hapus Log"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                </div>
+              ))}
+            </div>
+
+          </div>
+        )}
+
+        {/* ----------------- TAB: EXPORT CSV ----------------- */}
+        {activeTab === 'export' && (
+          <div className="max-w-xl mx-auto bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+            <h2 className="font-bold text-slate-800 text-base">Unduh Laporan CSV</h2>
+            <p className="text-xs text-slate-500">
+              Ekspor seluruh riwayat transaksi dan rincian per-Lot ID dalam format `.csv` untuk analisa spreadsheet.
+            </p>
+
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={() => downloadCSV('stok_lot_id')}
+                className="w-full p-4 border border-slate-200 rounded-xl flex justify-between items-center hover:border-emerald-500 transition text-left"
+              >
+                <div>
+                  <p className="font-bold text-slate-800 text-xs">Laporan Stok Rincian Per-Lot ID</p>
+                  <p className="text-[11px] text-slate-400">Rincian Lot ID, No Batch, Kadaluarsa, & Sisa Dosis.</p>
+                </div>
+                <Download className="w-5 h-5 text-emerald-600" />
+              </button>
+
+              <button
+                onClick={() => downloadCSV('transactions')}
+                className="w-full p-4 border border-slate-200 rounded-xl flex justify-between items-center hover:border-emerald-500 transition text-left"
+              >
+                <div>
+                  <p className="font-bold text-slate-800 text-xs">Laporan Mutasi Transaksi</p>
+                  <p className="text-[11px] text-slate-400">Riwayat log mutasi vaksin keluar dan masuk.</p>
+                </div>
+                <Download className="w-5 h-5 text-emerald-600" />
+              </button>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* ----------------- MODAL: TAMBAH TRANSAKSI ----------------- */}
+      {isTxModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            
+            <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+              <h3 className="font-bold text-slate-800 text-base">Pencatatan Transaksi Vaksin</h3>
+              <button onClick={() => setIsTxModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddTransaction} className="space-y-3 text-xs">
+              
+              {/* Toggle Mutasi */}
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Aksi Mutasi *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTxForm({ ...txForm, type: 'masuk', lotId: '', batchNo: '', expireDate: '' })}
+                    className={`py-2 rounded-xl font-bold transition flex items-center justify-center space-x-1 ${
+                      txForm.type === 'masuk' ? 'bg-emerald-600 text-white shadow' : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    <TrendingUp className="w-4 h-4" />
+                    <span>VAKSIN MASUK</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTxForm({ ...txForm, type: 'keluar', lotId: '', batchNo: '', expireDate: '' })}
+                    className={`py-2 rounded-xl font-bold transition flex items-center justify-center space-x-1 ${
+                      txForm.type === 'keluar' ? 'bg-rose-600 text-white shadow' : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    <TrendingDown className="w-4 h-4" />
+                    <span>VAKSIN KELUAR</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 1. Pilih Vaksin */}
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Pilih Jenis Vaksin *</label>
+                <select
+                  required
+                  value={txForm.vaccineId}
+                  onChange={(e) => handleVaccineSelection(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                >
+                  <option value="">-- Pilih Jenis Vaksin --</option>
+                  {vaccines.map((v) => (
+                    <option key={v.id} value={v.id}>{v.name} ({v.type})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 2. JIKA VAKSIN KELUAR -> PILIH BERDASARKAN LOT ID TERSEDIA */}
+              {txForm.type === 'keluar' && txForm.vaccineId && (
+                <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 space-y-2">
+                  <label className="block text-emerald-900 font-bold mb-1">
+                    Pilih Stok Berdasarkan Lot ID (FEFO Recommended) *
+                  </label>
+                  
+                  {availableLotsForKeluar.length === 0 ? (
+                    <p className="text-[11px] text-rose-600 font-medium">Stok aktif untuk vaksin ini sedang kosong!</p>
+                  ) : (
+                    <select
+                      required
+                      value={txForm.lotId}
+                      onChange={(e) => handleLotSelectionForKeluar(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-emerald-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">-- Pilih Lot ID Aktif --</option>
+                      {availableLotsForKeluar.map(lot => (
+                        <option key={lot.lotId} value={lot.lotId}>
+                          [{lot.lotId}] Batch: {lot.batchNo} (Sisa: {lot.currentStock} dosis | ED: {lot.expireDate})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {/* AUTOMATIC DISPLAY INFORMASI BATCH KETIKA LOT ID DIPILIH */}
+              {txForm.type === 'keluar' && txForm.lotId && (
+                <div className="bg-slate-100 p-3 rounded-xl space-y-1 text-slate-700">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Nomor Batch:</span>
+                    <span className="font-mono font-bold text-slate-800">{txForm.batchNo}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Tanggal Kadaluarsa:</span>
+                    <span className="font-bold text-rose-600">{txForm.expireDate}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Produsen:</span>
+                    <span>{txForm.producer}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* INPUT BATCH & EXP MANUAL (HANYA JIKA VAKSIN MASUK) */}
+              {txForm.type === 'masuk' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">No. Batch *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: BATCH2026A"
+                      value={txForm.batchNo}
+                      onChange={(e) => setTxForm({ ...txForm, batchNo: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl uppercase font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">Tgl Kadaluarsa *</label>
+                    <input
+                      type="date"
+                      required
+                      value={txForm.expireDate}
+                      onChange={(e) => setTxForm({ ...txForm, expireDate: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Dosis & Takaran */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-slate-600 font-semibold mb-1">Jumlah Dosis *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    placeholder="Contoh: 20"
+                    value={txForm.qty}
+                    onChange={(e) => setTxForm({ ...txForm, qty: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 font-semibold mb-1">Takaran Dosis</label>
+                  <input
+                    type="text"
+                    placeholder="Misal: 0.5 ml"
+                    value={txForm.dose}
+                    onChange={(e) => setTxForm({ ...txForm, dose: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              {/* Produsen (Hanya dapat diubah jika vaksin masuk) */}
+              {txForm.type === 'masuk' && (
+                <div>
+                  <label className="block text-slate-600 font-semibold mb-1">Produsen / Pabrikan</label>
+                  <input
+                    type="text"
+                    placeholder="Bio Farma / SII / Sanofi"
+                    value={txForm.producer}
+                    onChange={(e) => setTxForm({ ...txForm, producer: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                  />
+                </div>
+              )}
+
+              {/* Catatan */}
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Catatan Tambahan</label>
+                <textarea
+                  rows="2"
+                  placeholder="Keterangan posyandu / tujuan..."
+                  value={txForm.notes}
+                  onChange={(e) => setTxForm({ ...txForm, notes: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                ></textarea>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition"
+                >
+                  Simpan Transaksi
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ----------------- MODAL: TAMBAH MASTER VAKSIN ----------------- */}
+      {isVaxModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            
+            <div className="flex justify-between items-center border-b pb-3 border-slate-100">
+              <h3 className="font-bold text-slate-800 text-base">Tambah Jenis Vaksin baru</h3>
+              <button onClick={() => setIsVaxModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddVaccine} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Nama Vaksin *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Rotavirus"
+                  value={vaxForm.name}
+                  onChange={(e) => setVaxForm({ ...vaxForm, name: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Kategori Vaksin</label>
+                <select
+                  value={vaxForm.type}
+                  onChange={(e) => setVaxForm({ ...vaxForm, type: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                >
+                  <option value="Vaksin Wajib">Vaksin Wajib</option>
+                  <option value="Vaksin Pilihan">Vaksin Pilihan</option>
+                  <option value="Vaksin Khusus">Vaksin Khusus</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Produsen Utama</label>
+                <input
+                  type="text"
+                  placeholder="Bio Farma / SII"
+                  value={vaxForm.producer}
+                  onChange={(e) => setVaxForm({ ...vaxForm, producer: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">Batas Minimal Stok Alert</label>
+                <input
+                  type="number"
+                  value={vaxForm.minStock}
+                  onChange={(e) => setVaxForm({ ...vaxForm, minStock: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-md hover:bg-emerald-700 transition"
+                >
+                  Simpan Master Vaksin
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* MOBILE BOTTOM NAVIGATION */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-2 flex justify-around items-center md:hidden z-30 shadow-lg">
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          className={`flex flex-col items-center space-y-1 ${activeTab === 'dashboard' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}
+        >
+          <LayoutDashboard className="w-5 h-5" />
+          <span className="text-[10px]">Dashboard</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('stock')}
+          className={`flex flex-col items-center space-y-1 ${activeTab === 'stock' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}
+        >
+          <Package className="w-5 h-5" />
+          <span className="text-[10px]">Stok & Lot</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('transactions')}
+          className={`flex flex-col items-center space-y-1 ${activeTab === 'transactions' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}
+        >
+          <ArrowLeftRight className="w-5 h-5" />
+          <span className="text-[10px]">Transaksi</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('export')}
+          className={`flex flex-col items-center space-y-1 ${activeTab === 'export' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}
+        >
+          <Download className="w-5 h-5" />
+          <span className="text-[10px]">CSV</span>
+        </button>
+      </nav>
+
+    </div>
+  );
+}
