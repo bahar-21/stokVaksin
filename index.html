@@ -127,31 +127,42 @@
             };
 
             const restoreFromSheet = async (sheetName) => {
-                setIsSyncing(true);
-                try {
-                    const response = await fetch(`${GAS_URL}?sheet=${sheetName}`);
-                    const data = await response.json();
-                    if (sheetName === 'Master') {
-                        const restoredMaster = data.map(item => ({
-                            id: item.idvaksin, name: item.namavaksin, category: item.kategori, minStock: Number(item.batasminimum)
-                        }));
-                        setVaccines(restoredMaster);
-                        showToast('Master Vaksin dimuat ulang!', 'success');
-                    } else if (sheetName === 'Masuk' || sheetName === 'Keluar') {
-                        const restoredTxs = data.map(item => ({
-                            id: item.idtransaksi || `TX-REST-${Math.random()}`,
-                            vaccineId: item.namavaksin, vaccineName: item.namavaksin, type: sheetName === 'Masuk' ? 'masuk' : 'keluar',
-                            date: superFormatDate(item.tanggal), sourceOrFor: item.sumber || item.peruntukan,
-                            lotId: item.idmasuk || item.lotid, producer: item.merk || '-', batchNo: item.nobatch || '-',
-                            expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
-                            qty: Number(item.jumlah), notes: 'Restored from Sheet'
-                        }));
-                        setTransactions([...restoredTxs, ...transactions]);
-                        showToast(`Data ${sheetName} dimuat ulang!`, 'success');
-                    }
-                } catch (e) { showToast('Gagal mengambil data dari Google Sheet', 'error'); }
-                setIsSyncing(false);
-            };
+    setIsSyncing(true);
+    try {
+        const response = await fetch(`${GAS_URL}?sheet=${sheetName}`);
+        const data = await response.json();
+        if (sheetName === 'Master') {
+            const restoredMaster = data.map(item => ({
+                id: item.idvaksin, name: item.namavaksin, category: item.kategori, minStock: Number(item.batasminimum)
+            }));
+            setVaccines(restoredMaster);
+            showToast('Master Vaksin dimuat ulang!', 'success');
+        } else if (sheetName === 'Masuk' || sheetName === 'Keluar') {
+            const restoredTxs = data.map(item => {
+                // PERBAIKAN: Mencoba berbagai kemungkinan nama kolom Batch
+                const batchValue = item.nobatch || item.noBatch || item.NoBatch || item['No Batch'] || '-';
+                const producerValue = item.merk || item.producer || item.Merk || item['Merk'] || '-';
+                
+                return {
+                    id: item.idtransaksi || `TX-REST-${Math.random()}`,
+                    vaccineId: item.namavaksin, vaccineName: item.namavaksin, type: sheetName === 'Masuk' ? 'masuk' : 'keluar',
+                    date: superFormatDate(item.tanggal), sourceOrFor: item.sumber || item.peruntukan,
+                    lotId: item.idmasuk || item.lotid, 
+                    producer: producerValue, 
+                    batchNo: batchValue, 
+                    expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
+                    qty: Number(item.jumlah), notes: 'Restored from Sheet'
+                };
+            });
+            // Menggunakan spread operator agar data lama tidak hilang sepenuhnya jika diinginkan, 
+            // atau ganti menjadi setTransactions(restoredTxs) untuk sinkronisasi total.
+            setTransactions([...restoredTxs, ...transactions]);
+            showToast(`Data ${sheetName} dimuat ulang!`, 'success');
+        }
+    } catch (e) { showToast('Gagal mengambil data dari Google Sheet', 'error'); }
+    setIsSyncing(false);
+};
+
 
             const getCalculatedStock = () => {
                 const today = new Date();
@@ -199,60 +210,98 @@
             };
 
             const generateSmartLotId = (vaccine, batchNo, date, currentSessionIds) => {
-                const vaxNameShort = vaccine.name.toLowerCase().replace(/\s+/g, '');
-                const existingLot = transactions.find(t => 
-                    t.vaccineId === vaccine.id && t.batchNo === batchNo && t.date === date && t.type === 'masuk'
-                );
-                if (existingLot) return existingLot.lotId;
-                const usedIds = [...transactions.filter(t => t.vaccineId === vaccine.id && t.type === 'masuk').map(t => t.lotId), ...currentSessionIds];
-                let maxNumber = 0;
-                usedIds.forEach(id => {
-                    const num = parseInt(id.replace(/[^\d]/g, ''));
-                    if (!isNaN(num) && num > maxNumber) maxNumber = num;
-                });
-                return `${vaxNameShort}${maxNumber + 1}`;
-            };
+    // 1. Buat prefix yang bersih (Contoh: "Vaksin BCG" -> "bcg")
+    const vaxNameShort = vaccine.name.toLowerCase()
+        .replace(/\s+/g, '') 
+        .replace(/vaksin/g, '') 
+        .trim();
+    
+    // 2. Cek apakah Lot dengan Batch, Tanggal, dan Vaksin yang sama sudah ada (agar tidak duplikat)
+    const existingLot = transactions.find(t => 
+        (t.vaccineId === vaccine.id || t.vaccineName === vaccine.name) && 
+        t.batchNo === batchNo && 
+        t.date === date && 
+        t.type === 'masuk'
+    );
+    if (existingLot) return existingLot.lotId;
+
+    // 3. FILTER KETAT: Hanya ambil ID yang dimulai dengan prefix vaksin ini
+    // Contoh: Jika vaxNameShort adalah 'bcg', maka 'opv1' akan diabaikan.
+    const usedIdsForThisVax = [
+        ...transactions
+            .filter(t => t.type === 'masuk' && t.lotId && t.lotId.toLowerCase().startsWith(vaxNameShort))
+            .map(t => t.lotId), 
+        ...currentSessionIds.filter(id => id.toLowerCase().startsWith(vaxNameShort))
+    ];
+
+    let maxNumber = 0;
+    usedIdsForThisVax.forEach(id => {
+        // Ambil angka di akhir string
+        const match = id.match(/\d+$/); 
+        if (match) {
+            const num = parseInt(match[0], 10);
+            if (num > maxNumber) maxNumber = num;
+        }
+    });
+
+    // 4. Hasil akhir: prefix + (angka tertinggi vaksin tersebut + 1)
+    return `${vaxNameShort}${maxNumber + 1}`;
+};
+
+
 
             const handleSaveTransactions = async (e) => {
-                e.preventDefault();
-                if (!txHeader.date || !txHeader.sourceOrFor) {
-                    showToast('Tanggal dan Sumber/Peruntukan harus diisi!');
-                    return;
-                }
-                setIsSyncing(true);
-                const newTxs = [];
-                const currentSessionIds = [];
-                for (let item of txItems) {
-                    if (!item.vaccineId || !item.qty) continue;
-                    const vax = vaccines.find(v => v.id === item.vaccineId);
-                    let lotId, producer = '-', batchNo = '-', expireDate = '-';
-                    if (txType === 'masuk') {
-                        lotId = generateSmartLotId(vax, item.batchNo, txHeader.date, currentSessionIds);
-                        currentSessionIds.push(lotId);
-                        producer = item.producer || '-'; batchNo = item.batchNo || '-'; expireDate = item.expireDate || '-';
-                    } else {
-                        lotId = item.lotId;
-                        const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
-                        if (sourceTx) { producer = sourceTx.producer; batchNo = sourceTx.batchNo; expireDate = sourceTx.expireDate; }
-                    }
-                    const transactionData = {
-                        id: `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-                        vaccineId: item.vaccineId, vaccineName: vax ? vax.name : 'Unknown',
-                        type: txType, date: txHeader.date, sourceOrFor: txHeader.sourceOrFor,
-                        lotId: lotId, producer: producer, batchNo: batchNo, expireDate: expireDate,
-                        dose: item.dose || '-', unit: item.unit || 'dosis', qty: Number(item.qty), notes: item.notes || ''
-                    };
-                    newTxs.push(transactionData);
-                    await syncToSheet(transactionData);
-                }
-                if (newTxs.length === 0) { setIsSyncing(false); showToast('Mohon isi minimal satu jenis vaksin!'); return; }
-                setTransactions([...newTxs, ...transactions]);
-                setIsTxModalOpen(false);
-                setTxItems([{}]);
-                setTxHeader({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
-                setIsSyncing(false);
-                showToast('Berhasil disimpan & Sync Cloud!', 'success');
-            };
+    e.preventDefault();
+    if (!txHeader.date || !txHeader.sourceOrFor) {
+        showToast('Tanggal dan Sumber/Peruntukan harus diisi!');
+        return;
+    }
+    setIsSyncing(true);
+    const newTxs = [];
+    const currentSessionIds = [];
+    for (let item of txItems) {
+        if (!item.vaccineId || !item.qty) continue;
+        const vax = vaccines.find(v => v.id === item.vaccineId);
+        let lotId, producer = '-', batchNo = '-', expireDate = '-';
+        
+        if (txType === 'masuk') {
+            lotId = generateSmartLotId(vax, item.batchNo, txHeader.date, currentSessionIds);
+            currentSessionIds.push(lotId);
+            producer = item.producer || '-'; 
+            batchNo = item.batchNo || '-'; 
+            expireDate = item.expireDate || '-';
+        } else {
+            lotId = item.lotId;
+            // PERBAIKAN: Mencari di data transaksi lokal untuk mendapatkan info batch
+            const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
+            if (sourceTx) { 
+                producer = sourceTx.producer; 
+                batchNo = sourceTx.batchNo; 
+                expireDate = sourceTx.expireDate; 
+            } else {
+                // Jika tidak ditemukan di lokal, kita beri tanda agar user tahu data batch tidak tersedia
+                batchNo = "TIDAK DITEMUKAN"; 
+            }
+        }
+        const transactionData = {
+            id: `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            vaccineId: item.vaccineId, vaccineName: vax ? vax.name : 'Unknown',
+            type: txType, date: txHeader.date, sourceOrFor: txHeader.sourceOrFor,
+            lotId: lotId, producer: producer, batchNo: batchNo, expireDate: expireDate,
+            dose: item.dose || '-', unit: item.unit || 'dosis', qty: Number(item.qty), notes: item.notes || ''
+        };
+        newTxs.push(transactionData);
+        await syncToSheet(transactionData);
+    }
+    if (newTxs.length === 0) { setIsSyncing(false); showToast('Mohon isi minimal satu jenis vaksin!'); return; }
+    setTransactions([...newTxs, ...transactions]);
+    setIsTxModalOpen(false);
+    setTxItems([{}]);
+    setTxHeader({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
+    setIsSyncing(false);
+    showToast('Berhasil disimpan & Sync Cloud!', 'success');
+};
+
 
             const handleUpdateTx = async (e) => {
                 e.preventDefault();
