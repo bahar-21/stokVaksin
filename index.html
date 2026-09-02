@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VaxTrack Cloud - Stock Focus</title>
+    <title>VaxTrack Cloud - Fixed IDs</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#059669">
@@ -22,13 +22,31 @@
         // ==========================================
         // KONFIGURASI
         const GAS_URL = "https://script.google.com/macros/s/AKfycbzYRWtMss4mafbjt9jYTcVi38x6vuJR6Izs2EC1qZPkTOSRuMXlPNwjWuE-09t5nMOJ/exec"; 
-        const SYNC_INTERVAL = 30000; 
         // ==========================================
 
         // ==========================================
-        // INDEXED DB WRAPPER
+        // UTILITY & DATABASE
         // ==========================================
-        const dbName = "VaxTrackDB";
+        const mergeUnique = (oldData, newData) => {
+            const map = new Map();
+            [...oldData, ...newData].forEach(item => {
+                if(item && item.id) map.set(item.id, item);
+            });
+            return Array.from(map.values());
+        };
+
+        // Membuat ID stabil berdasarkan konten untuk mencegah duplikasi saat sync
+        const createStableId = (prefix, data) => {
+            const str = Object.values(data).join('|');
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                hash |= 0; 
+            }
+            return `${prefix}-${Math.abs(hash)}`;
+        };
+
+        const dbName = "VaxTrackDB_v2"; // Versi baru DB untuk reset data lama
         const storeNames = ["master", "transactions"];
 
         const initDB = () => {
@@ -92,6 +110,7 @@
         const FileDown = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>);
         const RefreshCcw = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-9 9Z"/><path d="M12 12v4"/><path d="m16 16-4 4-4-4"/></svg>);
         const AlertCircle = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>);
+        const FileText = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>);
 
         function App() {
             const [activeTab, setActiveTab] = useState('stock');
@@ -108,6 +127,9 @@
             const [expandedVaxId, setExpandedVaxId] = useState(null);
             const [searchQuery, setSearchQuery] = useState('');
             const [filterType, setFilterType] = useState('all');
+
+            const [cardVaxId, setCardVaxId] = useState('');
+            const [cardLotId, setCardLotId] = useState('');
 
             const [vaxForm, setVaxForm] = useState({ name: '', category: 'Vaksin Wajib', minStock: 10 });
             const [csvPreviewItems, setCsvPreviewItems] = useState([]);
@@ -140,42 +162,68 @@
             };
 
             // ==========================================
-            // SYNC ENGINE
+            // SYNC ENGINE (FIXED FOR DUPLICATES)
             // ==========================================
             const syncFromCloud = async (silent = false) => {
                 setIsSyncing(true);
                 try {
+                    // 1. Sync Master
                     const resMaster = await fetch(`${GAS_URL}?sheet=Master`);
                     const dataMaster = await resMaster.json();
                     const masterFormatted = dataMaster.map(item => ({
-                        id: item.idvaksin, name: item.namavaksin, category: item.kategori, minStock: Number(item.batasminimum)
+                        id: item.idvaksin || item.namavaksin.toLowerCase().replace(/\s+/g, ''), 
+                        name: item.namavaksin, 
+                        category: item.kategori, 
+                        minStock: Number(item.batasminimum)
                     }));
                     await saveToLocal("master", masterFormatted);
                     setVaccines(masterFormatted);
 
+                    // 2. Sync Masuk
                     const resMasuk = await fetch(`${GAS_URL}?sheet=Masuk`);
                     const dataMasuk = await resMasuk.json();
-                    const masukFormatted = dataMasuk.map(item => ({
-                        id: item.idtransaksi || `TX-M-${Math.random()}`,
-                        vaccineId: item.namavaksin, vaccineName: item.namavaksin, type: 'masuk',
-                        date: superFormatDate(item.tanggal), sourceOrFor: item.sumber,
-                        lotId: item.idmasuk || item.lotid, 
-                        producer: item.merk || '-', batchNo: item.nobatch || '-',
-                        expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
-                        qty: Number(item.jumlah), notes: ''
-                    }));
+                    const masukFormatted = dataMasuk.map(item => {
+                        const vaxId = item.namavaksin.toLowerCase().replace(/\s+/g, '');
+                        return {
+                            id: item.idtransaksi || createStableId('TX-M', item), 
+                            vaccineId: vaxId, 
+                            vaccineName: item.namavaksin, 
+                            type: 'masuk',
+                            date: superFormatDate(item.tanggal), 
+                            sourceOrFor: item.sumber,
+                            lotId: item.idmasuk || item.lotid || `lot-${vaxId}`, 
+                            producer: item.merk || item.producer || '-', 
+                            batchNo: item.nobatch || item.batchno || '-',
+                            expireDate: superFormatDate(item.kadaluarsa), 
+                            dose: item.dosis || '-', 
+                            unit: item.satuan || 'dosis',
+                            qty: Number(item.jumlah), 
+                            notes: ''
+                        };
+                    });
 
+                    // 3. Sync Keluar
                     const resKeluar = await fetch(`${GAS_URL}?sheet=Keluar`);
                     const dataKeluar = await resKeluar.json();
-                    const keluarFormatted = dataKeluar.map(item => ({
-                        id: item.idtransaksi || `TX-K-${Math.random()}`,
-                        vaccineId: item.namavaksin, vaccineName: item.namavaksin, type: 'keluar',
-                        date: superFormatDate(item.tanggal), sourceOrFor: item.peruntukan,
-                        lotId: item.lotid, 
-                        producer: item.merk || '-', batchNo: item.nobatch || '-',
-                        expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
-                        qty: Number(item.jumlah), notes: ''
-                    }));
+                    const keluarFormatted = dataKeluar.map(item => {
+                        const vaxId = item.namavaksin.toLowerCase().replace(/\s+/g, '');
+                        return {
+                            id: item.idtransaksi || createStableId('TX-K', item),
+                            vaccineId: vaxId, 
+                            vaccineName: item.namavaksin, 
+                            type: 'keluar',
+                            date: superFormatDate(item.tanggal), 
+                            sourceOrFor: item.peruntukan,
+                            lotId: item.lotid || item.idmasuk || '-', 
+                            producer: item.merk || item.producer || '-', 
+                            batchNo: item.nobatch || item.batchno || '-',
+                            expireDate: superFormatDate(item.kadaluarsa), 
+                            dose: item.dosis || '-', 
+                            unit: item.satuan || 'dosis',
+                            qty: Number(item.jumlah), 
+                            notes: ''
+                        };
+                    });
 
                     const allTxs = [...masukFormatted, ...keluarFormatted];
                     await saveToLocal("transactions", allTxs);
@@ -208,14 +256,13 @@
                     } else {
                         setVaccines(localMaster);
                         setTransactions(localTxs);
-                        syncFromCloud(true); 
                     }
                 };
                 loadInitialData();
-                }, []);
-                
+            }, []);
+
             // ==========================================
-            // STOCK CALCULATION (Dosis & Satuan)
+            // STOCK CALCULATION
             // ==========================================
             const getCalculatedStock = () => {
                 const today = new Date();
@@ -225,6 +272,7 @@
                     
                     vaxTxs.forEach((tx) => {
                         const key = tx.lotId;
+                        if (!key || key === '-') return;
                         if (!lotMap[key]) {
                             lotMap[key] = { 
                                 lotId: key, batchNo: tx.batchNo, expireDate: tx.expireDate, producer: tx.producer, 
@@ -260,7 +308,49 @@
             const calculatedStock = getCalculatedStock();
 
             // ==========================================
-            // EXPIRED LOTS LIST
+            // KARTU STOK LOGIC
+            // ==========================================
+            const getStockCardData = () => {
+                if (!cardLotId) return null;
+                const vaxInfo = calculatedStock.find(v => v.lots.some(l => l.lotId === cardLotId));
+                if (!vaxInfo) return null;
+                const lotInfo = vaxInfo.lots.find(l => l.lotId === cardLotId);
+                
+                const rawTxs = transactions.filter(t => t.lotId === cardLotId);
+                const uniqueTxs = Array.from(new Map(rawTxs.map(item => [item.id, item])).values());
+                const sortedTxs = uniqueTxs.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                const firstReceipt = sortedTxs.find(t => t.type === 'masuk')?.date || '-';
+
+                let runningBalance = 0;
+                const cardRows = sortedTxs.map(tx => {
+                    const qty = Number(tx.qty);
+                    if (tx.type === 'masuk') runningBalance += qty;
+                    else runningBalance -= qty;
+
+                    return {
+                        date: tx.date,
+                        in: tx.type === 'masuk' ? qty : 0,
+                        out: tx.type === 'keluar' ? qty : 0,
+                        sourceOrFor: tx.sourceOrFor,
+                        balance: runningBalance
+                    };
+                });
+
+                return {
+                    identity: {
+                        name: vaxInfo.name, lotId: lotInfo.lotId, batch: lotInfo.batchNo,
+                        exp: lotInfo.expireDate, prod: lotInfo.producer, unit: lotInfo.unitName, 
+                        dose: lotInfo.dosePerUnit, receiptDate: firstReceipt
+                    },
+                    rows: cardRows
+                };
+            };
+
+            const stockCard = getStockCardData();
+
+            // ==========================================
+            // EXPIRED LIST
             // ==========================================
             const getExpiredList = () => {
                 const today = new Date();
@@ -279,13 +369,25 @@
             const expiredLots = getExpiredList();
 
             // ==========================================
-            // LOT ID GENERATOR
+            // LOT ID GENERATOR (KONSISTEN)
             // ==========================================
             const generateSmartLotId = (vaccine, batchNo, date, currentSessionIds) => {
-                const vaxNameShort = vaccine.name.toLowerCase().replace(/\s+/g, '').replace(/vaksin/g, '').trim();
-                const existingLot = transactions.find(t => (t.vaccineId === vaccine.id || t.vaccineName === vaccine.name) && t.batchNo === batchNo && t.date === date && t.type === 'masuk');
+                const vaxId = vaccine.name.toLowerCase().replace(/\s+/g, '').replace(/vaksin/g, '').trim();
+                
+                // Cek apakah batch ini sudah ada di transaksi masuk
+                const existingLot = transactions.find(t => 
+                    (t.vaccineId === vaxId || t.vaccineName === vaccine.name) && 
+                    t.batchNo === batchNo && 
+                    t.type === 'masuk'
+                );
                 if (existingLot) return existingLot.lotId;
-                const usedIdsForThisVax = [...transactions.filter(t => t.type === 'masuk' && t.lotId && t.lotId.toLowerCase().startsWith(vaxNameShort)).map(t => t.lotId), ...currentSessionIds.filter(id => id.toLowerCase().startsWith(vaxNameShort))];
+
+                // Hitung nomor lot urut: bcg1, bcg2, dst
+                const usedIdsForThisVax = [
+                    ...transactions.filter(t => t.type === 'masuk' && t.lotId && t.lotId.startsWith(vaxId)).map(t => t.lotId),
+                    ...currentSessionIds.filter(id => id.startsWith(vaxId))
+                ];
+                
                 let maxNumber = 0;
                 usedIdsForThisVax.forEach(id => {
                     const match = id.match(/\d+$/);
@@ -294,12 +396,10 @@
                         if (num > maxNumber) maxNumber = num;
                     }
                 });
-                return `${vaxNameShort}${maxNumber + 1}`;
+                return `${vaxId}${maxNumber + 1}`;
             };
 
-            // ==========================================
             // CSV FEATURES
-            // ==========================================
             const downloadTemplate = () => {
                 const headers = "Tanggal Masuk,Sumber,Nama Vaksin,Merk,No Batch,Kadaluarsa(YYYY-MM-DD),Dosis,Satuan,Jumlah\n";
                 const example = "2023-10-27,Dinkes Kota,BCG,Bio Farma,BCG2026A,2026-12-31,20,Vial,5\n";
@@ -360,7 +460,7 @@
                 }
                 if (newTxs.length > 0) {
                     await saveToLocal("transactions", newTxs);
-                    setTransactions([...newTxs, ...transactions]);
+                    setTransactions(mergeUnique(transactions, newTxs));
                 }
                 setIsCsvPreviewOpen(false);
                 setIsSyncing(false);
@@ -371,10 +471,11 @@
             const handleAddVaccine = async (e) => {
                 e.preventDefault();
                 if (!vaxForm.name) return;
-                const newVax = { id: 'V-' + Date.now(), name: vaxForm.name, category: vaxForm.category, minStock: Number(vaxForm.minStock) };
+                const vaxId = vaxForm.name.toLowerCase().replace(/\s+/g, '');
+                const newVax = { id: vaxId, name: vaxForm.name, category: vaxForm.category, minStock: Number(vaxForm.minStock) };
                 await syncToCloud({ action: 'addMaster', ...newVax });
                 await saveToLocal("master", newVax);
-                setVaccines([...vaccines, newVax]);
+                setVaccines(mergeUnique(vaccines, [newVax]));
                 setIsVaxModalOpen(false);
                 setVaxForm({ name: '', category: 'Vaksin Wajib', minStock: 10 });
                 showToast('Jenis vaksin disimpan!', 'success');
@@ -392,18 +493,23 @@
                 for (let item of txItems) {
                     if (!item.vaccineId || !item.qty) continue;
                     const vax = vaccines.find(v => v.id === item.vaccineId);
-                    let lotId, producer = '-', batchNo = '-', expireDate = '-';
+                    let lotId, producer = '-', batchNo = '-', expireDate = '-', txId;
+
                     if (txType === 'masuk') {
                         lotId = generateSmartLotId(vax, item.batchNo, txHeader.date, currentSessionIds);
                         currentSessionIds.push(lotId);
+                        txId = `TX-M-${Date.now()}-${Math.floor(Math.random()*1000)}`;
                         producer = item.producer || '-'; batchNo = item.batchNo || '-'; expireDate = item.expireDate || '-';
                     } else {
                         lotId = item.lotId;
+                        // ID Keluar format: [lotid]-[nomor]
+                        const exitTxsForLot = transactions.filter(t => t.lotId === lotId && t.type === 'keluar');
+                        txId = `${lotId}-${exitTxsForLot.length + 1}`;
                         const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
                         if (sourceTx) { producer = sourceTx.producer; batchNo = sourceTx.batchNo; expireDate = sourceTx.expireDate; }
                     }
                     const transactionData = {
-                        id: `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                        id: txId,
                         vaccineId: item.vaccineId, vaccineName: vax ? vax.name : 'Unknown',
                         type: txType, date: txHeader.date, sourceOrFor: txHeader.sourceOrFor,
                         lotId: lotId, producer: producer, batchNo: batchNo, expireDate: expireDate,
@@ -414,7 +520,7 @@
                 }
                 if (newTxs.length === 0) { setIsSyncing(false); showToast('Mohon isi minimal satu jenis vaksin!'); return; }
                 await saveToLocal("transactions", newTxs);
-                setTransactions([...newTxs, ...transactions]);
+                setTransactions(mergeUnique(transactions, newTxs));
                 setIsTxModalOpen(false);
                 setTxItems([{}]);
                 setTxHeader({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
@@ -436,9 +542,9 @@
                                 <div className="flex items-center space-x-3">
                                     <div>
                                         <h1 className="font-bold text-lg leading-tight">VaxTrack Cloud</h1>
-                                        <p className="text-xs text-emerald-100">{isSyncing ? 'Syncing...' : 'IndexedDB Active'}</p>
+                                        <p className="text-xs text-emerald-100">Fixed ID Mode</p>
                                     </div>
-                                    <button onClick={() => syncFromCloud()} disabled={isSyncing} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition">
+                                    <button onClick={() => syncFromCloud()} disabled={isSyncing} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition" title="Sync Now">
                                         <RefreshCcw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
                                     </button>
                                 </div>
@@ -454,12 +560,13 @@
 
                     <main className="max-w-6xl mx-auto px-4 pt-4">
                         <div className="hidden md:flex space-x-2 mb-6 border-b border-slate-200 pb-2">
-                            {['stock', 'transactions', 'expired'].map(tab => (
+                            {['stock', 'transactions', 'card', 'expired'].map(tab => (
                                 <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition ${activeTab === tab ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
                                     {tab === 'stock' && <Package className="w-4 h-4" />}
                                     {tab === 'transactions' && <ArrowLeftRight className="w-4 h-4" />}
+                                    {tab === 'card' && <FileText className="w-4 h-4" />}
                                     {tab === 'expired' && <AlertCircle className="w-4 h-4" />}
-                                    <span className="capitalize">{tab === 'expired' ? 'Lot Kadaluarsa' : tab}</span>
+                                    <span className="capitalize">{tab === 'card' ? 'Kartu Stok' : tab === 'expired' ? 'Lot Kadaluarsa' : tab}</span>
                                 </button>
                             ))}
                         </div>
@@ -566,12 +673,86 @@
                                                         <div>Sumber/Untuk: <b className="text-slate-800">{tx.sourceOrFor}</b></div>
                                                         <div>Jumlah: <b className="text-slate-800">{tx.qty} {tx.unit}</b></div>
                                                     </div>
-                                                    <div className="text-slate-400 mt-1">{tx.date}</div>
+                                                    <div className="text-slate-400 mt-1">{tx.date} <span className="ml-2 text-[10px] opacity-50">ID: {tx.id}</span></div>
                                                 </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'card' && (
+                            <div className="space-y-6">
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">Pilih Vaksin</label>
+                                        <select value={cardVaxId} onChange={(e) => { setCardVaxId(e.target.value); setCardLotId(''); }} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                                            <option value="">-- Pilih Vaksin --</option>
+                                            {vaccines.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">Pilih Lot ID</label>
+                                        <select value={cardLotId} onChange={(e) => setCardLotId(e.target.value)} disabled={!cardVaxId} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:bg-slate-100">
+                                            <option value="">-- Pilih Lot ID --</option>
+                                            {calculatedStock.find(v => v.id === cardVaxId)?.lots.map(l => <option key={l.lotId} value={l.lotId}>{l.lotId} (Batch: {l.batchNo})</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {stockCard ? (
+                                    <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                                        <div className="bg-emerald-600 p-6 text-white">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h2 className="text-2xl font-black uppercase leading-tight">{stockCard.identity.name}</h2>
+                                                    <p className="text-emerald-100 text-sm font-medium">Kartu Stok Vaksin</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xs opacity-80">Lot ID</p>
+                                                    <p className="font-mono font-bold text-lg">{stockCard.identity.lotId}</p>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-6 pt-6 border-t border-white/20 text-xs">
+                                                <div><p className="opacity-70">Tgl Terima</p><p className="font-bold">{stockCard.identity.receiptDate}</p></div>
+                                                <div><p className="opacity-70">No Batch</p><p className="font-bold">{stockCard.identity.batch}</p></div>
+                                                <div><p className="opacity-70">Kadaluarsa</p><p className="font-bold">{stockCard.identity.exp}</p></div>
+                                                <div><p className="opacity-70">Produsen</p><p className="font-bold">{stockCard.identity.prod}</p></div>
+                                                <div><p className="opacity-70">Satuan (Dosis/Unit)</p><p className="font-bold">{stockCard.identity.dose} / {stockCard.identity.unit}</p></div>
+                                            </div>
+                                        </div>
+                                        <div className="p-4 overflow-x-auto">
+                                            <table className="w-full text-left text-xs border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-100 text-slate-600">
+                                                        <th className="p-3 border-b font-bold">Tanggal</th>
+                                                        <th className="p-3 border-b font-bold text-center">Masuk</th>
+                                                        <th className="p-3 border-b font-bold text-center">Keluar</th>
+                                                        <th className="p-3 border-b font-bold">Sumber / Peruntukan</th>
+                                                        <th className="p-3 border-b font-bold text-right">Saldo Stok</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {stockCard.rows.map((row, idx) => (
+                                                        <tr key={idx} className="hover:bg-slate-50 border-b border-slate-100">
+                                                            <td className="p-3">{row.date}</td>
+                                                            <td className="p-3 text-center font-medium text-emerald-600">{row.in > 0 ? row.in : '-'}</td>
+                                                            <td className="p-3 text-center font-medium text-rose-600">{row.out > 0 ? row.out : '-'}</td>
+                                                            <td className="p-3 text-slate-500">{row.sourceOrFor}</td>
+                                                            <td className="p-3 text-right font-black">{row.balance}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-300">
+                                        <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                                        <p className="text-slate-400 text-sm">Silakan pilih vaksin dan lot ID untuk melihat kartu stok.</p>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -723,7 +904,7 @@
                                                         ) : (
                                                             <td className="p-2 border-b"><select required value={item.lotId} onChange={(e) => { const n = [...txItems]; n[idx].lotId = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded">
                                                                 <option value="">-- Pilih ID Masuk --</option>
-                                                                {calculatedStock.find(v => v.id === item.vaccineId)?.lots.filter(l => l.currentStock > 0).map(l => <option key={l.lotId} value={l.lotId}>{l.lotId} (Sisa: {l.currentStock})</option>)}
+                                                                {calculatedStock.find(v => v.id === item.vaccineId)?.lots.filter(l => l.currentUnits > 0).map(l => <option key={l.lotId} value={l.lotId}>{l.lotId} (Sisa: {l.currentUnits} {l.unitName})</option>)}
                                                             </select></td>
                                                         )}
                                                         <td className="p-2 border-b"><input required type="number" value={item.qty} onChange={(e) => { const n = [...txItems]; n[idx].qty = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
@@ -745,6 +926,7 @@
                     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-2 flex justify-around items-center md:hidden z-30 shadow-lg">
                         <button onClick={() => setActiveTab('stock')} className={`flex flex-col items-center space-y-1 ${activeTab === 'stock' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><Package className="w-5 h-5" /><span className="text-[10px]">Stok</span></button>
                         <button onClick={() => setActiveTab('transactions')} className={`flex flex-col items-center space-y-1 ${activeTab === 'transactions' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><ArrowLeftRight className="w-5 h-5" /><span className="text-[10px]">Transaksi</span></button>
+                        <button onClick={() => setActiveTab('card')} className={`flex flex-col items-center space-y-1 ${activeTab === 'card' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><FileText className="w-5 h-5" /><span className="text-[10px]">Kartu Stok</span></button>
                         <button onClick={() => setActiveTab('expired')} className={`flex flex-col items-center space-y-1 ${activeTab === 'expired' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><AlertCircle className="w-5 h-5" /><span className="text-[10px]">Expired</span></button>
                     </nav>
                 </div>
