@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VaxTrack Cloud - Fixed IDs</title>
+    <title>VaxTrack Cloud - Pro Reporting</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#059669">
@@ -35,7 +35,6 @@
             return Array.from(map.values());
         };
 
-        // Membuat ID stabil berdasarkan konten untuk mencegah duplikasi saat sync
         const createStableId = (prefix, data) => {
             const str = Object.values(data).join('|');
             let hash = 0;
@@ -46,7 +45,7 @@
             return `${prefix}-${Math.abs(hash)}`;
         };
 
-        const dbName = "VaxTrackDB_v2"; // Versi baru DB untuk reset data lama
+        const dbName = "VaxTrackDB_v3"; 
         const storeNames = ["master", "transactions"];
 
         const initDB = () => {
@@ -111,6 +110,7 @@
         const RefreshCcw = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-9 9Z"/><path d="M12 12v4"/><path d="m16 16-4 4-4-4"/></svg>);
         const AlertCircle = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>);
         const FileText = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>);
+        const Copy = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>);
 
         function App() {
             const [activeTab, setActiveTab] = useState('stock');
@@ -137,93 +137,94 @@
             const [txHeader, setTxHeader] = useState({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
             const [txItems, setTxItems] = useState([{}]);
 
+            // State for Daily Report
+            const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
+
             const showToast = (message, type = 'error') => {
                 setToast({ message, type });
                 setTimeout(() => setToast(null), 4000);
             };
 
             const superFormatDate = (dateVal) => {
-                if (!dateVal) return '';
-                if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) return dateVal;
-                try {
-                    if (typeof dateVal === 'string') {
-                        const parts = dateVal.split(/[\/\-]/);
-                        if (parts.length === 3 && parts[0].length <= 2) {
-                            const day = parts[0].padStart(2, '0');
-                            const month = parts[1].padStart(2, '0');
-                            const year = parts[2].length === 4 ? parts[2] : '20' + parts[2];
-                            return `${year}-${month}-${day}`;
-                        }
-                    }
-                    const d = new Date(dateVal);
-                    if (isNaN(d.getTime())) return dateVal;
-                    return d.toISOString().split('T')[0];
-                } catch (e) { return dateVal; }
-            };
+    if (!dateVal) return '';
+    
+    // 1. Jika input adalah string, kita bersihkan dulu
+    if (typeof dateVal === 'string') {
+        // Jika formatnya ISO (ada huruf T), ambil 10 karakter pertama saja (YYYY-MM-DD)
+        // Contoh: "2026-09-02T00:00:00.000Z" -> "2026-09-02"
+        if (dateVal.includes('T')) {
+            return dateVal.split('T')[0];
+        }
+
+        // Jika formatnya sudah YYYY-MM-DD, langsung kembalikan
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+            return dateVal;
+        }
+
+        // Jika formatnya DD/MM/YYYY atau DD-MM-YYYY
+        const parts = dateVal.split(/[\/\-]/);
+        if (parts.length === 3 && parts[0].length <= 2) {
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            const year = parts[2].length === 4 ? parts[2] : '20' + parts[2];
+            return `${year}-${month}-${day}`;
+        }
+    }
+    
+    // 2. Jika input benar-benar berupa objek Date (jarang terjadi dari JSON)
+    try {
+        const d = new Date(dateVal);
+        if (isNaN(d.getTime())) return dateVal;
+        
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    } catch (e) { 
+        return dateVal; 
+    }
+};
+
 
             // ==========================================
-            // SYNC ENGINE (FIXED FOR DUPLICATES)
+            // SYNC ENGINE
             // ==========================================
             const syncFromCloud = async (silent = false) => {
                 setIsSyncing(true);
                 try {
-                    // 1. Sync Master
                     const resMaster = await fetch(`${GAS_URL}?sheet=Master`);
                     const dataMaster = await resMaster.json();
                     const masterFormatted = dataMaster.map(item => ({
                         id: item.idvaksin || item.namavaksin.toLowerCase().replace(/\s+/g, ''), 
-                        name: item.namavaksin, 
-                        category: item.kategori, 
-                        minStock: Number(item.batasminimum)
+                        name: item.namavaksin, category: item.kategori, minStock: Number(item.batasminimum)
                     }));
                     await saveToLocal("master", masterFormatted);
                     setVaccines(masterFormatted);
 
-                    // 2. Sync Masuk
                     const resMasuk = await fetch(`${GAS_URL}?sheet=Masuk`);
                     const dataMasuk = await resMasuk.json();
-                    const masukFormatted = dataMasuk.map(item => {
-                        const vaxId = item.namavaksin.toLowerCase().replace(/\s+/g, '');
-                        return {
-                            id: item.idtransaksi || createStableId('TX-M', item), 
-                            vaccineId: vaxId, 
-                            vaccineName: item.namavaksin, 
-                            type: 'masuk',
-                            date: superFormatDate(item.tanggal), 
-                            sourceOrFor: item.sumber,
-                            lotId: item.idmasuk || item.lotid || `lot-${vaxId}`, 
-                            producer: item.merk || item.producer || '-', 
-                            batchNo: item.nobatch || item.batchno || '-',
-                            expireDate: superFormatDate(item.kadaluarsa), 
-                            dose: item.dosis || '-', 
-                            unit: item.satuan || 'dosis',
-                            qty: Number(item.jumlah), 
-                            notes: ''
-                        };
-                    });
+                    const masukFormatted = dataMasuk.map(item => ({
+                        id: item.idtransaksi || createStableId('TX-M', item), 
+                        vaccineId: item.namavaksin.toLowerCase().replace(/\s+/g, ''), vaccineName: item.namavaksin, type: 'masuk',
+                        date: superFormatDate(item.tanggal), sourceOrFor: item.sumber,
+                        lotId: item.idmasuk || item.lotid || `lot-${item.namavaksin.toLowerCase().replace(/\s+/g, '')}`, 
+                        producer: item.merk || item.producer || '-', batchNo: item.nobatch || item.batchno || '-',
+                        expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
+                        qty: Number(item.jumlah), notes: ''
+                    }));
 
-                    // 3. Sync Keluar
                     const resKeluar = await fetch(`${GAS_URL}?sheet=Keluar`);
                     const dataKeluar = await resKeluar.json();
-                    const keluarFormatted = dataKeluar.map(item => {
-                        const vaxId = item.namavaksin.toLowerCase().replace(/\s+/g, '');
-                        return {
-                            id: item.idtransaksi || createStableId('TX-K', item),
-                            vaccineId: vaxId, 
-                            vaccineName: item.namavaksin, 
-                            type: 'keluar',
-                            date: superFormatDate(item.tanggal), 
-                            sourceOrFor: item.peruntukan,
-                            lotId: item.lotid || item.idmasuk || '-', 
-                            producer: item.merk || item.producer || '-', 
-                            batchNo: item.nobatch || item.batchno || '-',
-                            expireDate: superFormatDate(item.kadaluarsa), 
-                            dose: item.dosis || '-', 
-                            unit: item.satuan || 'dosis',
-                            qty: Number(item.jumlah), 
-                            notes: ''
-                        };
-                    });
+                    const keluarFormatted = dataKeluar.map(item => ({
+                        id: item.idtransaksi || createStableId('TX-K', item),
+                        vaccineId: item.namavaksin.toLowerCase().replace(/\s+/g, ''), 
+                        vaccineName: item.namavaksin, type: 'keluar',
+                        date: superFormatDate(item.tanggal), sourceOrFor: item.peruntukan,
+                        lotId: item.lotid || item.idmasuk || '-', 
+                        producer: item.merk || item.producer || '-', batchNo: item.nobatch || item.batchno || '-',
+                        expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
+                        qty: Number(item.jumlah), notes: ''
+                    }));
 
                     const allTxs = [...masukFormatted, ...keluarFormatted];
                     await saveToLocal("transactions", allTxs);
@@ -350,7 +351,98 @@
             const stockCard = getStockCardData();
 
             // ==========================================
-            // EXPIRED LIST
+            // NEW FEATURES: EXPORTS
+            // ==========================================
+            
+            // 1. Download Stock Card CSV
+            const downloadStockCardCSV = () => {
+                if (!stockCard) return;
+                
+                let csvContent = "data:text/csv;charset=utf-8,";
+                csvContent += `KARTU STOK VAKSIN\r\n`;
+                csvContent += `Nama Vaksin,${stockCard.identity.name}\r\n`;
+                csvContent += `Lot ID,${stockCard.identity.lotId}\r\n`;
+                csvContent += `Batch,${stockCard.identity.batch}\r\n`;
+                csvContent += `Kadaluarsa,${stockCard.identity.exp}\r\n`;
+                csvContent += `Produsen,${stockCard.identity.prod}\r\n`;
+                csvContent += `Satuan,${stockCard.identity.dose} / ${stockCard.identity.unit}\r\n\r\n`;
+                csvContent += `Tanggal,Masuk,Keluar,Keterangan,Saldo\r\n`;
+
+                stockCard.rows.forEach(row => {
+                    csvContent += `${row.date},${row.in},${row.out},"${row.sourceOrFor}",${row.balance}\r\n`;
+                });
+
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `KartuStok_${stockCard.identity.name}_${stockCard.identity.lotId}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showToast('CSV Berhasil diunduh!', 'success');
+            };
+
+            // 2. Copy Daily Report to WA/Telegram
+            const copyDailyReport = async () => {
+                const date = reportDate;
+                const filteredTxs = transactions.filter(t => t.date === date);
+                
+                if (filteredTxs.length === 0) {
+                    showToast('Tidak ada transaksi pada tanggal ini');
+                    return;
+                }
+
+                // Group by Lot ID to get unique batches moved today
+                const dailySummary = {};
+                filteredTxs.forEach(t => {
+                    if (!dailySummary[t.lotId]) {
+                        dailySummary[t.lotId] = {
+                            name: t.vaccineName,
+                            batch: t.batchNo,
+                            exp: t.expireDate,
+                            in: 0,
+                            out: 0
+                        };
+                    }
+                    if (t.type === 'masuk') dailySummary[t.lotId].in += Number(t.qty);
+                    else dailySummary[t.lotId].out += Number(t.qty);
+                });
+
+                // Format Date for Header
+                const d = new Date(date);
+                const options = { day: 'numeric', month: 'long', year: 'numeric' };
+                const dateStr = d.toLocaleDateString('id-ID', options);
+
+                let reportText = `Transaksi Vaksin\nTanggal ${dateStr}\n\n`;
+                
+                let index = 1;
+                for (const lotId in dailySummary) {
+                    const item = dailySummary[lotId];
+                    
+                    // Calculate current balance for this lot up to this date
+                    const balance = transactions
+                        .filter(t => t.lotId === lotId && t.date <= date)
+                        .reduce((acc, t) => t.type === 'masuk' ? acc + Number(t.qty) : acc - Number(t.qty), 0);
+
+                    reportText += `${index}. Nama Vaksin : ${item.name}\n`;
+                    reportText += `No.batch : ${item.batch}\n`;
+                    reportText += `Kadaluarsa : ${item.exp}\n`;
+                    reportText += `Masuk : ${item.in > 0 ? item.in : '-'}\n`;
+                    reportText += `Keluar : ${item.out > 0 ? item.out : '-'}\n`;
+                    reportText += `Stok : ${balance}\n\n`;
+                    index++;
+                }
+
+                try {
+                    await navigator.clipboard.writeText(reportText);
+                    showToast('Laporan berhasil disalin!', 'success');
+                } catch (err) {
+                    showToast('Gagal menyalin teks');
+                }
+            };
+
+            // ==========================================
+            // EXISTING LOGICS (Lest maintain the others)
             // ==========================================
             const getExpiredList = () => {
                 const today = new Date();
@@ -368,26 +460,11 @@
 
             const expiredLots = getExpiredList();
 
-            // ==========================================
-            // LOT ID GENERATOR (KONSISTEN)
-            // ==========================================
             const generateSmartLotId = (vaccine, batchNo, date, currentSessionIds) => {
                 const vaxId = vaccine.name.toLowerCase().replace(/\s+/g, '').replace(/vaksin/g, '').trim();
-                
-                // Cek apakah batch ini sudah ada di transaksi masuk
-                const existingLot = transactions.find(t => 
-                    (t.vaccineId === vaxId || t.vaccineName === vaccine.name) && 
-                    t.batchNo === batchNo && 
-                    t.type === 'masuk'
-                );
+                const existingLot = transactions.find(t => (t.vaccineId === vaxId || t.vaccineName === vaccine.name) && t.batchNo === batchNo && t.type === 'masuk');
                 if (existingLot) return existingLot.lotId;
-
-                // Hitung nomor lot urut: bcg1, bcg2, dst
-                const usedIdsForThisVax = [
-                    ...transactions.filter(t => t.type === 'masuk' && t.lotId && t.lotId.startsWith(vaxId)).map(t => t.lotId),
-                    ...currentSessionIds.filter(id => id.startsWith(vaxId))
-                ];
-                
+                const usedIdsForThisVax = [...transactions.filter(t => t.type === 'masuk' && t.lotId && t.lotId.startsWith(vaxId)).map(t => t.lotId), ...currentSessionIds.filter(id => id.startsWith(vaxId))];
                 let maxNumber = 0;
                 usedIdsForThisVax.forEach(id => {
                     const match = id.match(/\d+$/);
@@ -399,7 +476,6 @@
                 return `${vaxId}${maxNumber + 1}`;
             };
 
-            // CSV FEATURES
             const downloadTemplate = () => {
                 const headers = "Tanggal Masuk,Sumber,Nama Vaksin,Merk,No Batch,Kadaluarsa(YYYY-MM-DD),Dosis,Satuan,Jumlah\n";
                 const example = "2023-10-27,Dinkes Kota,BCG,Bio Farma,BCG2026A,2026-12-31,20,Vial,5\n";
@@ -502,7 +578,6 @@
                         producer = item.producer || '-'; batchNo = item.batchNo || '-'; expireDate = item.expireDate || '-';
                     } else {
                         lotId = item.lotId;
-                        // ID Keluar format: [lotid]-[nomor]
                         const exitTxsForLot = transactions.filter(t => t.lotId === lotId && t.type === 'keluar');
                         txId = `${lotId}-${exitTxsForLot.length + 1}`;
                         const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
@@ -542,7 +617,7 @@
                                 <div className="flex items-center space-x-3">
                                     <div>
                                         <h1 className="font-bold text-lg leading-tight">VaxTrack Cloud</h1>
-                                        <p className="text-xs text-emerald-100">Fixed ID Mode</p>
+                                        <p className="text-xs text-emerald-100">Professional Reporting Mode</p>
                                     </div>
                                     <button onClick={() => syncFromCloud()} disabled={isSyncing} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition" title="Sync Now">
                                         <RefreshCcw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -636,6 +711,29 @@
 
                         {activeTab === 'transactions' && (
                             <div className="space-y-4">
+                                {/* EXPORT SECTION */}
+                                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm space-y-3">
+                                    <div className="flex items-center space-x-2 text-emerald-700 font-bold text-sm">
+                                        <Copy className="w-4 h-4" />
+                                        <span>Salin Laporan Harian (WA/Telegram)</span>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <input 
+                                            type="date" 
+                                            value={reportDate} 
+                                            onChange={(e) => setReportDate(e.target.value)} 
+                                            className="p-2 bg-white border border-emerald-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none" 
+                                        />
+                                        <button 
+                                            onClick={copyDailyReport} 
+                                            className="bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center space-x-2 shadow-sm"
+                                        >
+                                            <Copy className="w-3.5 h-3.5" />
+                                            <span>Salin Teks Laporan</span>
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-2xl shadow-sm border border-slate-100 gap-3">
                                     <h2 className="font-bold">Riwayat Mutasi</h2>
                                     <div className="flex gap-2 w-full sm:w-auto">
@@ -673,7 +771,7 @@
                                                         <div>Sumber/Untuk: <b className="text-slate-800">{tx.sourceOrFor}</b></div>
                                                         <div>Jumlah: <b className="text-slate-800">{tx.qty} {tx.unit}</b></div>
                                                     </div>
-                                                    <div className="text-slate-400 mt-1">{tx.date} <span className="ml-2 text-[10px] opacity-50">ID: {tx.id}</span></div>
+                                                    <div className="text-slate-400 mt-1">{tx.date}</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -705,7 +803,7 @@
                                     <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
                                         <div className="bg-emerald-600 p-6 text-white">
                                             <div className="flex justify-between items-start">
-                                                <div>
+                                                <div className="flex-1">
                                                     <h2 className="text-2xl font-black uppercase leading-tight">{stockCard.identity.name}</h2>
                                                     <p className="text-emerald-100 text-sm font-medium">Kartu Stok Vaksin</p>
                                                 </div>
@@ -722,29 +820,37 @@
                                                 <div><p className="opacity-70">Satuan (Dosis/Unit)</p><p className="font-bold">{stockCard.identity.dose} / {stockCard.identity.unit}</p></div>
                                             </div>
                                         </div>
-                                        <div className="p-4 overflow-x-auto">
-                                            <table className="w-full text-left text-xs border-collapse">
-                                                <thead>
-                                                    <tr className="bg-slate-100 text-slate-600">
-                                                        <th className="p-3 border-b font-bold">Tanggal</th>
-                                                        <th className="p-3 border-b font-bold text-center">Masuk</th>
-                                                        <th className="p-3 border-b font-bold text-center">Keluar</th>
-                                                        <th className="p-3 border-b font-bold">Sumber / Peruntukan</th>
-                                                        <th className="p-3 border-b font-bold text-right">Saldo Stok</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {stockCard.rows.map((row, idx) => (
-                                                        <tr key={idx} className="hover:bg-slate-50 border-b border-slate-100">
-                                                            <td className="p-3">{row.date}</td>
-                                                            <td className="p-3 text-center font-medium text-emerald-600">{row.in > 0 ? row.in : '-'}</td>
-                                                            <td className="p-3 text-center font-medium text-rose-600">{row.out > 0 ? row.out : '-'}</td>
-                                                            <td className="p-3 text-slate-500">{row.sourceOrFor}</td>
-                                                            <td className="p-3 text-right font-black">{row.balance}</td>
+                                        <div className="p-4 space-y-4">
+                                            <div className="flex justify-end">
+                                                <button onClick={downloadStockCardCSV} className="bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center space-x-2 hover:bg-slate-900 transition shadow-sm">
+                                                    <FileDown className="w-3.5 h-3.5" />
+                                                    <span>Download CSV Kartu Stok</span>
+                                                </button>
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left text-xs border-collapse">
+                                                    <thead>
+                                                        <tr className="bg-slate-100 text-slate-600">
+                                                            <th className="p-3 border-b font-bold">Tanggal</th>
+                                                            <th className="p-3 border-b font-bold text-center">Masuk</th>
+                                                            <th className="p-3 border-b font-bold text-center">Keluar</th>
+                                                            <th className="p-3 border-b font-bold">Sumber / Peruntukan</th>
+                                                            <th className="p-3 border-b font-bold text-right">Saldo Stok</th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                                    </thead>
+                                                    <tbody>
+                                                        {stockCard.rows.map((row, idx) => (
+                                                            <tr key={idx} className="hover:bg-slate-50 border-b border-slate-100">
+                                                                <td className="p-3">{row.date}</td>
+                                                                <td className="p-3 text-center font-medium text-emerald-600">{row.in > 0 ? row.in : '-'}</td>
+                                                                <td className="p-3 text-center font-medium text-rose-600">{row.out > 0 ? row.out : '-'}</td>
+                                                                <td className="p-3 text-slate-500">{row.sourceOrFor}</td>
+                                                                <td className="p-3 text-right font-black">{row.balance}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         </div>
                                     </div>
                                 ) : (
@@ -797,7 +903,7 @@
                         )}
                     </main>
 
-                    {/* MODAL TAMBAH VAKSIN */}
+                    {/* MODALS (TETAP SAMA SEPERTI SEBELUMNYA) */}
                     {isVaxModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
@@ -815,7 +921,6 @@
                         </div>
                     )}
 
-                    {/* MODAL CSV PREVIEW */}
                     {isCsvPreviewOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-6xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-hidden flex flex-col">
@@ -866,7 +971,6 @@
                         </div>
                     )}
 
-                    {/* MODAL CATAT MUTASI */}
                     {isTxModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
