@@ -139,6 +139,8 @@
 
             // State for Daily Report
             const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
+            const [txStartDate, setTxStartDate] = useState('');
+            const [txEndDate, setTxEndDate] = useState('');
 
             const showToast = (message, type = 'error') => {
                 setToast({ message, type });
@@ -382,60 +384,86 @@
                 showToast('CSV Berhasil diunduh!', 'success');
             };
 
-            // 2. Copy Daily Report to WA/Telegram
-            const copyDailyReport = async () => {
-                const date = reportDate;
-                const filteredTxs = transactions.filter(t => t.date === date);
-                
-                if (filteredTxs.length === 0) {
-                    showToast('Tidak ada transaksi pada tanggal ini');
+            // 2. Filter, sort, and copy transaction report by date range
+            const normalizeTxDate = (dateVal) => {
+                if (!dateVal) return '';
+                const value = String(dateVal);
+                if (value.includes('T')) return value.substring(0, 10);
+                const match = value.match(/(\d{4}-\d{2}-\d{2})/);
+                return match ? match[1] : value;
+            };
+
+            const displayedTransactions = transactions
+                .filter(t => {
+                    const d = normalizeTxDate(t.date);
+                    if (txStartDate && d < txStartDate) return false;
+                    if (txEndDate && d > txEndDate) return false;
+                    return true;
+                })
+                .sort((a, b) => {
+                    const dateCompare = normalizeTxDate(b.date).localeCompare(normalizeTxDate(a.date));
+                    if (dateCompare !== 0) return dateCompare;
+                    return String(b.id || '').localeCompare(String(a.id || ''));
+                });
+
+            const resetTxDateFilter = () => {
+                setTxStartDate('');
+                setTxEndDate('');
+            };
+
+            const copyFilteredTransactions = async () => {
+                if (txStartDate && txEndDate && txStartDate > txEndDate) {
+                    showToast('Tanggal mulai tidak boleh lebih besar dari tanggal akhir');
                     return;
                 }
 
-                // Group by Lot ID to get unique batches moved today
-                const dailySummary = {};
-                filteredTxs.forEach(t => {
-                    if (!dailySummary[t.lotId]) {
-                        dailySummary[t.lotId] = {
-                            name: t.vaccineName,
-                            batch: t.batchNo,
-                            exp: t.expireDate,
+                if (displayedTransactions.length === 0) {
+                    showToast('Tidak ada transaksi pada rentang tanggal yang dipilih');
+                    return;
+                }
+
+                // Akumulasi berdasarkan ID/Lot ID yang sama, bukan berdasarkan hari.
+                const summary = {};
+                displayedTransactions.forEach(t => {
+                    const key = t.lotId || t.vaccineId || t.id;
+                    if (!summary[key]) {
+                        summary[key] = {
+                            lotId: t.lotId || '-',
+                            name: t.vaccineName || '-',
+                            batch: t.batchNo || '-',
+                            exp: t.expireDate || '-',
+                            unit: t.unit || '',
                             in: 0,
                             out: 0
                         };
                     }
-                    if (t.type === 'masuk') dailySummary[t.lotId].in += Number(t.qty);
-                    else dailySummary[t.lotId].out += Number(t.qty);
+                    const qty = Number(t.qty) || 0;
+                    if (t.type === 'masuk') summary[key].in += qty;
+                    else if (t.type === 'keluar') summary[key].out += qty;
                 });
 
-                // Format Date for Header
-                const d = new Date(date);
-                const options = { day: 'numeric', month: 'long', year: 'numeric' };
-                const dateStr = d.toLocaleDateString('id-ID', options);
+                const formatNumber = n => Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
+                const periodText = txStartDate || txEndDate
+                    ? `Periode ${txStartDate || 'awal'} s/d ${txEndDate || 'akhir'}`
+                    : 'Semua transaksi';
 
-                let reportText = `Transaksi Vaksin\nTanggal ${dateStr}\n\n`;
-                
+                let reportText = `Transaksi Vaksin\n${periodText}\n\n`;
                 let index = 1;
-                for (const lotId in dailySummary) {
-                    const item = dailySummary[lotId];
-                    
-                    // Calculate current balance for this lot up to this date
-                    const balance = transactions
-                        .filter(t => t.lotId === lotId && t.date <= date)
-                        .reduce((acc, t) => t.type === 'masuk' ? acc + Number(t.qty) : acc - Number(t.qty), 0);
-
+                Object.values(summary).forEach(item => {
+                    const net = item.in - item.out;
                     reportText += `${index}. Nama Vaksin : ${item.name}\n`;
+                    reportText += `ID/Lot : ${item.lotId}\n`;
                     reportText += `No.batch : ${item.batch}\n`;
                     reportText += `Kadaluarsa : ${item.exp}\n`;
-                    reportText += `Masuk : ${item.in > 0 ? item.in : '-'}\n`;
-                    reportText += `Keluar : ${item.out > 0 ? item.out : '-'}\n`;
-                    reportText += `Stok : ${balance}\n\n`;
+                    reportText += `Masuk : ${item.in > 0 ? formatNumber(item.in) : '-'}\n`;
+                    reportText += `Keluar : ${item.out > 0 ? formatNumber(item.out) : '-'}\n`;
+                    reportText += `Selisih : ${formatNumber(net)} ${item.unit}\n\n`;
                     index++;
-                }
+                });
 
                 try {
-                    await navigator.clipboard.writeText(reportText);
-                    showToast('Laporan berhasil disalin!', 'success');
+                    await navigator.clipboard.writeText(reportText.trim());
+                    showToast('Teks transaksi berhasil disalin!', 'success');
                 } catch (err) {
                     showToast('Gagal menyalin teks');
                 }
@@ -711,27 +739,30 @@
 
                         {activeTab === 'transactions' && (
                             <div className="space-y-4">
-                                {/* EXPORT SECTION */}
+                                {/* FILTER & COPY TRANSACTION SECTION */}
                                 <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm space-y-3">
                                     <div className="flex items-center space-x-2 text-emerald-700 font-bold text-sm">
                                         <Copy className="w-4 h-4" />
-                                        <span>Salin Laporan Harian (WA/Telegram)</span>
+                                        <span>Filter & Salin Transaksi</span>
                                     </div>
-                                    <div className="flex flex-col sm:flex-row gap-2">
-                                        <input 
-                                            type="date" 
-                                            value={reportDate} 
-                                            onChange={(e) => setReportDate(e.target.value)} 
-                                            className="p-2 bg-white border border-emerald-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none" 
-                                        />
-                                        <button 
-                                            onClick={copyDailyReport} 
-                                            className="bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center space-x-2 shadow-sm"
-                                        >
+                                    <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                                        <div className="flex-1">
+                                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">Tanggal Mulai</label>
+                                            <input type="date" value={txStartDate} onChange={(e) => setTxStartDate(e.target.value)} className="w-full p-2 bg-white border border-emerald-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">Tanggal Akhir</label>
+                                            <input type="date" value={txEndDate} onChange={(e) => setTxEndDate(e.target.value)} className="w-full p-2 bg-white border border-emerald-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none" />
+                                        </div>
+                                        <button onClick={resetTxDateFilter} className="bg-white border border-emerald-200 text-emerald-700 text-xs font-bold px-4 py-2 rounded-xl hover:bg-emerald-100 transition">
+                                            Tampilkan Semua
+                                        </button>
+                                        <button onClick={copyFilteredTransactions} className="bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center space-x-2 shadow-sm">
                                             <Copy className="w-3.5 h-3.5" />
-                                            <span>Salin Teks Laporan</span>
+                                            <span>Salin Teks</span>
                                         </button>
                                     </div>
+                                    <div className="text-[10px] text-slate-500">Menampilkan <b>{displayedTransactions.length}</b> transaksi. Saat disalin, transaksi dengan ID/Lot yang sama akan digabung dan diakumulasi untuk seluruh rentang tanggal.</div>
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-2xl shadow-sm border border-slate-100 gap-3">
@@ -753,7 +784,7 @@
                                 </div>
                                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
                                 <div className="space-y-2">
-                                    {transactions.map(tx => (
+                                    {displayedTransactions.map(tx => (
                                         <div key={tx.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between gap-3 text-xs">
                                             <div className="flex items-start space-x-3">
                                                 <div className={`p-2 rounded-xl ${tx.type === 'masuk' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
