@@ -112,6 +112,58 @@
         const FileText = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>);
         const Copy = ({ className="w-5 h-5" }) => (<svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>);
 
+        // ==========================================
+        // STANDAR DOSIS & SATUAN VAKSIN
+        // Nilai ini menjadi fallback jika data Master/transaksi tidak lengkap.
+        // Jika Master memiliki kolom dosis/satuan, data Master diprioritaskan.
+        const VACCINE_STANDARDS = {
+            'HBO':  { dose: 1,  unit: 'vial' },
+            'BCG':  { dose: 20, unit: 'vial' },
+            'OPV':  { dose: 20, unit: 'vial' },
+            'DPT':  { dose: 10, unit: 'vial' },
+            'DPTHBHIB': { dose: 10, unit: 'vial' },
+            'PNEUMOKOKUS': { dose: 4, unit: 'vial' },
+            'PCV':  { dose: 4,  unit: 'vial' },
+            'ROTA': { dose: 1,  unit: 'tube' },
+            'ROTAVIRUS': { dose: 1, unit: 'tube' },
+            'IPV':  { dose: 5,  unit: 'vial' },
+            'MR':   { dose: 10, unit: 'vial' },
+            'TD':   { dose: 10, unit: 'vial' },
+            'DT':   { dose: 10, unit: 'vial' },
+            'HPV':  { dose: 1,  unit: 'vial' }
+        };
+
+        const normalizeVaccineKey = (name) => String(name || '')
+            .toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+        const parseDoseValue = (value) => {
+            if (value === null || value === undefined) return NaN;
+            const n = parseFloat(String(value).replace(',', '.'));
+            return Number.isFinite(n) && n > 0 ? n : NaN;
+        };
+
+        const getVaccineStandard = (name) => {
+            const key = normalizeVaccineKey(name);
+            return VACCINE_STANDARDS[key] || { dose: 1, unit: 'vial' };
+        };
+
+        // Satu sumber aturan untuk semua tampilan stok/transaksi.
+        const normalizeVaccineMeta = (name, dose, unit, master = {}) => {
+            const standard = getVaccineStandard(name);
+            const masterDose = parseDoseValue(master.dosis ?? master.dose);
+            const suppliedDose = parseDoseValue(dose);
+            const finalDose = Number.isFinite(masterDose) ? masterDose
+                : Number.isFinite(suppliedDose) ? suppliedDose : standard.dose;
+            const rawUnit = master.satuan ?? master.unit ?? unit;
+            const candidateUnit = String(rawUnit || '').trim().toLowerCase();
+            // 'dosis', 'satuan', dan 'unit' bukan bentuk satuan kemasan.
+            // Jika data lama memakai istilah generik tersebut, gunakan satuan standar vaksin.
+            const genericUnits = ['dosis', 'dose', 'satuan', 'unit', '-'];
+            const finalUnit = genericUnits.includes(candidateUnit) || !candidateUnit
+                ? standard.unit : candidateUnit;
+            return { dose: finalDose, unit: finalUnit };
+        };
+
         function App() {
             const [activeTab, setActiveTab] = useState('stock');
             const [toast, setToast] = useState(null);
@@ -139,8 +191,9 @@
 
             // State for Daily Report
             const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
-            const [txStartDate, setTxStartDate] = useState('');
-            const [txEndDate, setTxEndDate] = useState('');
+            const [showAllHistory, setShowAllHistory] = useState(false);
+            const [historySort, setHistorySort] = useState('dateDesc');
+            const [historyPage, setHistoryPage] = useState(1);
 
             const showToast = (message, type = 'error') => {
                 setToast({ message, type });
@@ -187,6 +240,22 @@
     }
 };
 
+            // Pada tanggal dan ID vaksin yang sama, penerimaan dicatat sebelum pengeluaran.
+            // Ini menjaga saldo kartu stok dan teks laporan mengikuti alur transaksi yang benar.
+            const sortTransactions = (a, b) => {
+                const dateCompare = String(a.date || '').localeCompare(String(b.date || ''));
+                if (dateCompare !== 0) return dateCompare;
+
+                const vaccineCompare = String(a.vaccineId || a.vaccineName || '')
+                    .localeCompare(String(b.vaccineId || b.vaccineName || ''), 'id', { sensitivity: 'base' });
+                if (vaccineCompare !== 0) return vaccineCompare;
+
+                const typeCompare = (a.type === 'masuk' ? 0 : 1) - (b.type === 'masuk' ? 0 : 1);
+                if (typeCompare !== 0) return typeCompare;
+
+                return String(a.id || '').localeCompare(String(b.id || ''));
+            };
+
 
             // ==========================================
             // SYNC ENGINE
@@ -211,7 +280,8 @@
                         date: superFormatDate(item.tanggal), sourceOrFor: item.sumber,
                         lotId: item.idmasuk || item.lotid || `lot-${item.namavaksin.toLowerCase().replace(/\s+/g, '')}`, 
                         producer: item.merk || item.producer || '-', batchNo: item.nobatch || item.batchno || '-',
-                        expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
+                        expireDate: superFormatDate(item.kadaluarsa),
+                        ...normalizeVaccineMeta(item.namavaksin, item.dosis, item.satuan),
                         qty: Number(item.jumlah), notes: ''
                     }));
 
@@ -224,7 +294,8 @@
                         date: superFormatDate(item.tanggal), sourceOrFor: item.peruntukan,
                         lotId: item.lotid || item.idmasuk || '-', 
                         producer: item.merk || item.producer || '-', batchNo: item.nobatch || item.batchno || '-',
-                        expireDate: superFormatDate(item.kadaluarsa), dose: item.dosis || '-', unit: item.satuan || 'dosis',
+                        expireDate: superFormatDate(item.kadaluarsa),
+                        ...normalizeVaccineMeta(item.namavaksin, item.dosis, item.satuan),
                         qty: Number(item.jumlah), notes: ''
                     }));
 
@@ -279,7 +350,8 @@
                         if (!lotMap[key]) {
                             lotMap[key] = { 
                                 lotId: key, batchNo: tx.batchNo, expireDate: tx.expireDate, producer: tx.producer, 
-                                unitName: tx.unit || 'unit', dosePerUnit: parseFloat(tx.dose) || 1,
+                                unitName: normalizeVaccineMeta(vax.name, tx.dose, tx.unit, vax).unit,
+                                dosePerUnit: normalizeVaccineMeta(vax.name, tx.dose, tx.unit, vax).dose,
                                 masuk: 0, keluar: 0, currentUnits: 0, currentDoses: 0 
                             };
                         }
@@ -321,7 +393,7 @@
                 
                 const rawTxs = transactions.filter(t => t.lotId === cardLotId);
                 const uniqueTxs = Array.from(new Map(rawTxs.map(item => [item.id, item])).values());
-                const sortedTxs = uniqueTxs.sort((a, b) => new Date(a.date) - new Date(b.date));
+                const sortedTxs = uniqueTxs.sort(sortTransactions);
 
                 const firstReceipt = sortedTxs.find(t => t.type === 'masuk')?.date || '-';
 
@@ -384,86 +456,70 @@
                 showToast('CSV Berhasil diunduh!', 'success');
             };
 
-            // 2. Filter, sort, and copy transaction report by date range
-            const normalizeTxDate = (dateVal) => {
-                if (!dateVal) return '';
-                const value = String(dateVal);
-                if (value.includes('T')) return value.substring(0, 10);
-                const match = value.match(/(\d{4}-\d{2}-\d{2})/);
-                return match ? match[1] : value;
-            };
-
-            const displayedTransactions = transactions
-                .filter(t => {
-                    const d = normalizeTxDate(t.date);
-                    if (txStartDate && d < txStartDate) return false;
-                    if (txEndDate && d > txEndDate) return false;
-                    return true;
-                })
-                .sort((a, b) => {
-                    const dateCompare = normalizeTxDate(b.date).localeCompare(normalizeTxDate(a.date));
-                    if (dateCompare !== 0) return dateCompare;
-                    return String(b.id || '').localeCompare(String(a.id || ''));
-                });
-
-            const resetTxDateFilter = () => {
-                setTxStartDate('');
-                setTxEndDate('');
-            };
-
-            const copyFilteredTransactions = async () => {
-                if (txStartDate && txEndDate && txStartDate > txEndDate) {
-                    showToast('Tanggal mulai tidak boleh lebih besar dari tanggal akhir');
+            // 2. Copy Daily Report to WA/Telegram
+            const copyDailyReport = async () => {
+                const date = reportDate;
+                const filteredTxs = transactions
+                    .filter(t => t.date === date)
+                    .sort(sortTransactions);
+                
+                if (filteredTxs.length === 0) {
+                    showToast('Tidak ada transaksi pada tanggal ini');
                     return;
                 }
 
-                if (displayedTransactions.length === 0) {
-                    showToast('Tidak ada transaksi pada rentang tanggal yang dipilih');
-                    return;
-                }
+                // Kelompokkan seperti formulir input: jenis transaksi dan Sumber/Tujuan yang sama.
+                const reportGroups = [];
+                // Hitung saldo per Lot ID setelah setiap transaksi. Pengurutan memakai
+                // aturan masuk lebih dahulu daripada keluar pada tanggal/ID vaksin yang sama.
+                const balanceByTransactionId = new Map();
+                const runningBalances = {};
+                transactions
+                    .filter(tx => String(tx.date || '') <= date)
+                    .slice()
+                    .sort(sortTransactions)
+                    .forEach(tx => {
+                        const lotId = tx.lotId || '-';
+                        const qty = Number(tx.qty) || 0;
+                        runningBalances[lotId] = (runningBalances[lotId] || 0)
+                            + (tx.type === 'masuk' ? qty : -qty);
+                        balanceByTransactionId.set(tx.id, runningBalances[lotId]);
+                    });
 
-                // Akumulasi berdasarkan ID/Lot ID yang sama, bukan berdasarkan hari.
-                const summary = {};
-                displayedTransactions.forEach(t => {
-                    const key = t.lotId || t.vaccineId || t.id;
-                    if (!summary[key]) {
-                        summary[key] = {
-                            lotId: t.lotId || '-',
-                            name: t.vaccineName || '-',
-                            batch: t.batchNo || '-',
-                            exp: t.expireDate || '-',
-                            unit: t.unit || '',
-                            in: 0,
-                            out: 0
-                        };
+                filteredTxs.forEach(tx => {
+                    const key = `${tx.type}|${tx.sourceOrFor || '-'}`;
+                    let group = reportGroups.find(item => item.key === key);
+                    if (!group) {
+                        group = { key, type: tx.type, sourceOrFor: tx.sourceOrFor || '-', items: [] };
+                        reportGroups.push(group);
                     }
-                    const qty = Number(t.qty) || 0;
-                    if (t.type === 'masuk') summary[key].in += qty;
-                    else if (t.type === 'keluar') summary[key].out += qty;
+                    group.items.push(tx);
                 });
+                reportGroups.sort((a, b) => (a.type === 'masuk' ? 0 : 1) - (b.type === 'masuk' ? 0 : 1));
 
-                const formatNumber = n => Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
-                const periodText = txStartDate || txEndDate
-                    ? `Periode ${txStartDate || 'awal'} s/d ${txEndDate || 'akhir'}`
-                    : 'Semua transaksi';
+                let reportText = '';
+                reportGroups.forEach((group, groupIndex) => {
+                    const isMasuk = group.type === 'masuk';
+                    reportText += `${isMasuk ? 'VAKSIN MASUK' : 'VAKSIN KELUAR'}\n`;
+                    reportText += `Tanggal : ${date}\n`;
+                    reportText += `${isMasuk ? 'Sumber' : 'Tujuan'} : ${group.sourceOrFor}\n`;
+                    reportText += `Rincian Vaksin :\n`;
 
-                let reportText = `Transaksi Vaksin\n${periodText}\n\n`;
-                let index = 1;
-                Object.values(summary).forEach(item => {
-                    const net = item.in - item.out;
-                    reportText += `${index}. Nama Vaksin : ${item.name}\n`;
-                    reportText += `ID/Lot : ${item.lotId}\n`;
-                    reportText += `No.batch : ${item.batch}\n`;
-                    reportText += `Kadaluarsa : ${item.exp}\n`;
-                    reportText += `Masuk : ${item.in > 0 ? formatNumber(item.in) : '-'}\n`;
-                    reportText += `Keluar : ${item.out > 0 ? formatNumber(item.out) : '-'}\n`;
-                    reportText += `Selisih : ${formatNumber(net)} ${item.unit}\n\n`;
-                    index++;
+                    group.items.forEach((tx, index) => {
+                        const meta = normalizeVaccineMeta(tx.vaccineName, tx.dose, tx.unit);
+                        const totalDoses = (Number(tx.qty) || 0) * (Number(meta.dose) || 0);
+                        const balance = balanceByTransactionId.get(tx.id) ?? 0;
+                        reportText += `${index + 1}. ${tx.vaccineName} (${tx.batchNo || '-'} / ${tx.expireDate || '-'})\n`;
+                        reportText += `   ${tx.qty} ${meta.unit} / ${totalDoses} dosis\n`;
+                        reportText += `   Sisa Stok : ${balance} ${meta.unit}\n`;
+                    });
+
+                    if (groupIndex < reportGroups.length - 1) reportText += '\n';
                 });
 
                 try {
-                    await navigator.clipboard.writeText(reportText.trim());
-                    showToast('Teks transaksi berhasil disalin!', 'success');
+                    await navigator.clipboard.writeText(reportText);
+                    showToast('Laporan berhasil disalin!', 'success');
                 } catch (err) {
                     showToast('Gagal menyalin teks');
                 }
@@ -553,11 +609,12 @@
                     if (!vax) { errorCount++; continue; }
                     const lotId = generateSmartLotId(vax, item.batchNo, item.date, currentSessionIds);
                     currentSessionIds.push(lotId);
+                    const csvMeta = normalizeVaccineMeta(vax.name, item.dose, item.unit, vax);
                     const transactionData = {
                         id: `TX-CSV-${Date.now()}-${item.tempId}`, vaccineId: vax.id, vaccineName: vax.name, type: 'masuk',
                         date: item.date, sourceOrFor: item.source, lotId: lotId,
                         producer: item.producer, batchNo: item.batchNo, expireDate: item.expireDate,
-                        dose: item.dose, unit: item.unit, qty: Number(item.qty), notes: 'Imported via CSV'
+                        dose: csvMeta.dose, unit: csvMeta.unit, qty: Number(item.qty), notes: 'Imported via CSV'
                     };
                     await syncToCloud(transactionData);
                     newTxs.push(transactionData);
@@ -611,12 +668,15 @@
                         const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
                         if (sourceTx) { producer = sourceTx.producer; batchNo = sourceTx.batchNo; expireDate = sourceTx.expireDate; }
                     }
+                    const sourceLot = txType === 'keluar' ? transactions.find(t => t.lotId === lotId && t.type === 'masuk') : null;
+                    const metaSource = sourceLot || vax || {};
+                    const meta = normalizeVaccineMeta(vax ? vax.name : item.vaccineId, metaSource.dose || item.dose, metaSource.unit || item.unit, vax || {});
                     const transactionData = {
                         id: txId,
                         vaccineId: item.vaccineId, vaccineName: vax ? vax.name : 'Unknown',
                         type: txType, date: txHeader.date, sourceOrFor: txHeader.sourceOrFor,
                         lotId: lotId, producer: producer, batchNo: batchNo, expireDate: expireDate,
-                        dose: item.dose || '-', unit: item.unit || 'dosis', qty: Number(item.qty), notes: item.notes || ''
+                        dose: meta.dose, unit: meta.unit, qty: Number(item.qty), notes: item.notes || ''
                     };
                     newTxs.push(transactionData);
                     await syncToCloud(transactionData);
@@ -631,9 +691,56 @@
                 showToast('Berhasil disimpan & Sync Cloud!', 'success');
             };
 
-            const filteredStock = calculatedStock.filter(v => 
-                v.name.toLowerCase().includes(searchQuery.toLowerCase()) && 
-                (filterType === 'all' || v.category === filterType)
+            // Urutan vaksin khusus pada halaman Stok
+            const vaccineOrder = ['HBO', 'BCG', 'OPV', 'DPT', 'PCV', 'ROTA', 'IPV', 'MR', 'TD', 'DT', 'HPV'];
+
+            const getVaccineOrderIndex = (name) => {
+                const normalized = String(name || '').trim().toUpperCase();
+                const index = vaccineOrder.indexOf(normalized);
+                return index === -1 ? vaccineOrder.length : index;
+            };
+
+            const filteredStock = calculatedStock
+                .filter(v => 
+                    v.name.toLowerCase().includes(searchQuery.toLowerCase()) && 
+                    (filterType === 'all' || v.category === filterType)
+                )
+                .sort((a, b) => {
+                    const orderA = getVaccineOrderIndex(a.name);
+                    const orderB = getVaccineOrderIndex(b.name);
+
+                    if (orderA !== orderB) return orderA - orderB;
+
+                    // Vaksin di luar daftar utama tetap tampil, diurutkan alfabetis.
+                    return String(a.name || '').localeCompare(
+                        String(b.name || ''),
+                        'id',
+                        { sensitivity: 'base' }
+                    );
+                });
+
+            const historyPerPage = 20;
+            const filteredHistory = transactions
+                .filter(tx => showAllHistory || tx.date === reportDate)
+                .slice()
+                .sort((a, b) => {
+                    if (historySort === 'name') {
+                        const result = String(a.vaccineName || '').localeCompare(String(b.vaccineName || ''), 'id', { sensitivity: 'base' });
+                        return result || sortTransactions(a, b);
+                    }
+                    if (historySort === 'id') {
+                        const result = String(a.vaccineId || a.lotId || '').localeCompare(String(b.vaccineId || b.lotId || ''), 'id', { sensitivity: 'base' });
+                        return result || sortTransactions(a, b);
+                    }
+                    if (historySort === 'dateAsc') return sortTransactions(a, b);
+                    const dateCompare = String(b.date || '').localeCompare(String(a.date || ''));
+                    return dateCompare || sortTransactions(a, b);
+                });
+            const historyTotalPages = Math.max(1, Math.ceil(filteredHistory.length / historyPerPage));
+            const safeHistoryPage = Math.min(historyPage, historyTotalPages);
+            const paginatedHistory = filteredHistory.slice(
+                (safeHistoryPage - 1) * historyPerPage,
+                safeHistoryPage * historyPerPage
             );
 
             return (
@@ -706,9 +813,9 @@
                                                 </div>
                                                 <div className="flex items-center space-x-4">
                                                     <div className="text-right">
-                                                        <span className={`text-lg font-black ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.totalDoses}</span>
-                                                        <span className="text-xs text-slate-400 ml-1">Dosis</span>
-                                                        <div className="text-[10px] font-bold text-slate-500">{vax.totalUnits} Satuan</div>
+                                                        <span className="text-xs text-slate-400 ml-1">Stok</span>
+                                                        <div className="text-lg font-black text-slate-700">{vax.totalUnits} {vax.lots[0]?.unitName || getVaccineStandard(vax.name).unit}</div>
+                                                        <div className={`text-sm font-black ${vax.isLowStock ? 'text-amber-600' : 'text-emerald-700'}`}>{vax.totalDoses} dosis</div>
                                                     </div>
                                                     {expandedVaxId === vax.id ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                                                 </div>
@@ -723,8 +830,8 @@
                                                             <div className="mt-2 pt-2 border-t flex justify-between items-end font-black">
                                                                 <span className="text-slate-400 text-[10px] uppercase">Sisa:</span>
                                                                 <div className="text-right">
-                                                                    <div className="text-sm text-emerald-700">{lot.currentDoses} Dosis</div>
-                                                                    <div className="text-[10px] text-slate-500">{lot.currentUnits} {lot.unitName}</div>
+                                                                    <div className="text-sm text-slate-700">{lot.currentUnits} {lot.unitName}</div>
+                                                                    <div className="text-[10px] text-emerald-700">{lot.currentDoses} dosis</div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -739,30 +846,27 @@
 
                         {activeTab === 'transactions' && (
                             <div className="space-y-4">
-                                {/* FILTER & COPY TRANSACTION SECTION */}
+                                {/* EXPORT SECTION */}
                                 <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm space-y-3">
                                     <div className="flex items-center space-x-2 text-emerald-700 font-bold text-sm">
                                         <Copy className="w-4 h-4" />
-                                        <span>Filter & Salin Transaksi</span>
+                                        <span>Salin Laporan Harian (WA/Telegram)</span>
                                     </div>
-                                    <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-                                        <div className="flex-1">
-                                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">Tanggal Mulai</label>
-                                            <input type="date" value={txStartDate} onChange={(e) => setTxStartDate(e.target.value)} className="w-full p-2 bg-white border border-emerald-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">Tanggal Akhir</label>
-                                            <input type="date" value={txEndDate} onChange={(e) => setTxEndDate(e.target.value)} className="w-full p-2 bg-white border border-emerald-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none" />
-                                        </div>
-                                        <button onClick={resetTxDateFilter} className="bg-white border border-emerald-200 text-emerald-700 text-xs font-bold px-4 py-2 rounded-xl hover:bg-emerald-100 transition">
-                                            Tampilkan Semua
-                                        </button>
-                                        <button onClick={copyFilteredTransactions} className="bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center space-x-2 shadow-sm">
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <input 
+                                            type="date" 
+                                            value={reportDate} 
+                                            onChange={(e) => { setReportDate(e.target.value); setHistoryPage(1); }} 
+                                            className="p-2 bg-white border border-emerald-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none" 
+                                        />
+                                        <button 
+                                            onClick={copyDailyReport} 
+                                            className="bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center space-x-2 shadow-sm"
+                                        >
                                             <Copy className="w-3.5 h-3.5" />
-                                            <span>Salin Teks</span>
+                                            <span>Salin Teks Laporan</span>
                                         </button>
                                     </div>
-                                    <div className="text-[10px] text-slate-500">Menampilkan <b>{displayedTransactions.length}</b> transaksi. Saat disalin, transaksi dengan ID/Lot yang sama akan digabung dan diakumulasi untuk seluruh rentang tanggal.</div>
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-2xl shadow-sm border border-slate-100 gap-3">
@@ -782,9 +886,40 @@
                                         </button>
                                     </div>
                                 </div>
+                                <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between text-xs">
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <span className="font-semibold text-slate-600">Filter tanggal: {reportDate}</span>
+                                        <label className="flex items-center gap-2 cursor-pointer text-slate-600">
+                                            <input
+                                                type="checkbox"
+                                                checked={showAllHistory}
+                                                onChange={(e) => { setShowAllHistory(e.target.checked); setHistoryPage(1); }}
+                                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                            />
+                                            <span>Tampilkan semua transaksi</span>
+                                        </label>
+                                    </div>
+                                    <label className="flex items-center gap-2 text-slate-600">
+                                        <span className="font-semibold">Urutkan:</span>
+                                        <select
+                                            value={historySort}
+                                            onChange={(e) => { setHistorySort(e.target.value); setHistoryPage(1); }}
+                                            className="p-2 bg-slate-50 border border-slate-200 rounded-lg"
+                                        >
+                                            <option value="dateDesc">Tanggal terbaru</option>
+                                            <option value="dateAsc">Tanggal terlama</option>
+                                            <option value="name">Nama vaksin</option>
+                                            <option value="id">ID vaksin</option>
+                                        </select>
+                                    </label>
+                                </div>
                                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".csv" className="hidden" />
                                 <div className="space-y-2">
-                                    {displayedTransactions.map(tx => (
+                                    {paginatedHistory.length === 0 ? (
+                                        <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-slate-300 text-sm text-slate-400">
+                                            Tidak ada transaksi pada tanggal ini.
+                                        </div>
+                                    ) : paginatedHistory.map(tx => (
                                         <div key={tx.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between gap-3 text-xs">
                                             <div className="flex items-start space-x-3">
                                                 <div className={`p-2 rounded-xl ${tx.type === 'masuk' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
@@ -800,7 +935,7 @@
                                                         <div>Batch: <b className="text-slate-800">{tx.batchNo}</b></div>
                                                         <div>ED: <b className="text-rose-600">{tx.expireDate}</b></div>
                                                         <div>Sumber/Untuk: <b className="text-slate-800">{tx.sourceOrFor}</b></div>
-                                                        <div>Jumlah: <b className="text-slate-800">{tx.qty} {tx.unit}</b></div>
+                                                        <div>Jumlah: <b className="text-slate-800">{tx.qty} {normalizeVaccineMeta(tx.vaccineName, tx.dose, tx.unit).unit}</b></div>
                                                     </div>
                                                     <div className="text-slate-400 mt-1">{tx.date}</div>
                                                 </div>
@@ -808,6 +943,16 @@
                                         </div>
                                     ))}
                                 </div>
+                                {filteredHistory.length > 0 && (
+                                    <div className="flex flex-col sm:flex-row justify-between items-center gap-3 bg-white p-3 rounded-2xl border border-slate-100 text-xs">
+                                        <span className="text-slate-500">Menampilkan {(safeHistoryPage - 1) * historyPerPage + 1}–{Math.min(safeHistoryPage * historyPerPage, filteredHistory.length)} dari {filteredHistory.length} transaksi</span>
+                                        <div className="flex items-center gap-2">
+                                            <button type="button" onClick={() => setHistoryPage(Math.max(1, safeHistoryPage - 1))} disabled={safeHistoryPage === 1} className="px-3 py-2 rounded-lg bg-slate-100 text-slate-600 disabled:opacity-40">Sebelumnya</button>
+                                            <span className="font-semibold text-slate-600">Halaman {safeHistoryPage} / {historyTotalPages}</span>
+                                            <button type="button" onClick={() => setHistoryPage(Math.min(historyTotalPages, safeHistoryPage + 1))} disabled={safeHistoryPage === historyTotalPages} className="px-3 py-2 rounded-lg bg-slate-100 text-slate-600 disabled:opacity-40">Berikutnya</button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -924,7 +1069,7 @@
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg">
                                                     <div>Batch: <b className="text-slate-700">{lot.batchNo}</b></div>
-                                                    <div className="text-right">Sisa: <b className="text-slate-700">{lot.currentDoses} Dosis</b></div>
+                                                    <div className="text-right">Sisa: <b className="text-slate-700">{lot.currentUnits} {lot.unitName}</b><br/><span className="text-[10px] text-emerald-700">{lot.currentDoses} dosis</span></div>
                                                 </div>
                                             </div>
                                         ))
@@ -1020,11 +1165,11 @@
                                     </div>
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left border-collapse">
-                                            <thead><tr className="text-slate-500"><th className="p-2 border-b">Vaksin</th>{txType === 'masuk' ? (<><th className="p-2 border-b">Merk</th><th className="p-2 border-b">Batch</th><th className="p-2 border-b">Kadaluarsa</th><th className="p-2 border-b">Dosis</th><th className="p-2 border-b">Satuan</th></>) : (<th className="p-2 border-b">ID Masuk (Lot ID)</th>)}<th className="p-2 border-b">Jumlah</th><th className="p-2 border-b w-10"></th></tr></thead>
+                                            <thead><tr className="text-slate-500"><th className="p-2 border-b">Vaksin</th>{txType === 'masuk' ? (<><th className="p-2 border-b">Merk</th><th className="p-2 border-b">Batch</th><th className="p-2 border-b">Kadaluarsa</th><th className="p-2 border-b">Dosis/kemasan</th><th className="p-2 border-b">Satuan</th></>) : (<th className="p-2 border-b">ID Masuk (Lot ID)</th>)}<th className="p-2 border-b">Jumlah Satuan</th><th className="p-2 border-b">Total Dosis</th><th className="p-2 border-b w-10"></th></tr></thead>
                                             <tbody>
                                                 {txItems.map((item, idx) => (
                                                     <tr key={idx}>
-                                                        <td className="p-2 border-b"><select required value={item.vaccineId} onChange={(e) => { const n = [...txItems]; n[idx].vaccineId = e.target.value; setTxItems(n); }} className="w-full p-1.5 bg-slate-50 border rounded">
+                                                        <td className="p-2 border-b"><select required value={item.vaccineId} onChange={(e) => { const n = [...txItems]; const selected = vaccines.find(v => v.id === e.target.value); const meta = selected ? normalizeVaccineMeta(selected.name, selected.dose, selected.unit, selected) : {dose:'',unit:''}; n[idx] = {...n[idx], vaccineId:e.target.value, dose:meta.dose, unit:meta.unit}; setTxItems(n); }} className="w-full p-1.5 bg-slate-50 border rounded">
                                                             <option value="">-- Pilih --</option>
                                                             {vaccines.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                                                         </select></td>
@@ -1033,8 +1178,8 @@
                                                                 <td className="p-2 border-b"><input type="text" value={item.producer} onChange={(e) => { const n = [...txItems]; n[idx].producer = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
                                                                 <td className="p-2 border-b"><input type="text" value={item.batchNo} onChange={(e) => { const n = [...txItems]; n[idx].batchNo = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded uppercase" /></td>
                                                                 <td className="p-2 border-b"><input type="date" value={item.expireDate} onChange={(e) => { const n = [...txItems]; n[idx].expireDate = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
-                                                                <td className="p-2 border-b"><input type="text" value={item.dose} onChange={(e) => { const n = [...txItems]; n[idx].dose = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" placeholder="20" /></td>
-                                                                <td className="p-2 border-b"><input type="text" value={item.unit} onChange={(e) => { const n = [...txItems]; n[idx].unit = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" placeholder="Vial" /></td>
+                                                                <td className="p-2 border-b"><input type="number" min="1" step="1" value={item.dose || ''} readOnly className="w-full p-1.5 border rounded bg-slate-100 font-bold" title="Dosis per satuan mengikuti standar/master vaksin" /></td>
+                                                                <td className="p-2 border-b"><input type="text" value={item.unit || ''} readOnly className="w-full p-1.5 border rounded bg-slate-100 font-bold" /></td>
                                                             </>
                                                         ) : (
                                                             <td className="p-2 border-b"><select required value={item.lotId} onChange={(e) => { const n = [...txItems]; n[idx].lotId = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded">
@@ -1042,7 +1187,8 @@
                                                                 {calculatedStock.find(v => v.id === item.vaccineId)?.lots.filter(l => l.currentUnits > 0).map(l => <option key={l.lotId} value={l.lotId}>{l.lotId} (Sisa: {l.currentUnits} {l.unitName})</option>)}
                                                             </select></td>
                                                         )}
-                                                        <td className="p-2 border-b"><input required type="number" value={item.qty} onChange={(e) => { const n = [...txItems]; n[idx].qty = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
+                                                        <td className="p-2 border-b"><input required min="1" type="number" value={item.qty || ''} onChange={(e) => { const n = [...txItems]; n[idx].qty = e.target.value; setTxItems(n); }} className="w-full p-1.5 border rounded" /></td>
+                                                        <td className="p-2 border-b text-center font-bold text-emerald-700">{(Number(item.qty) || 0) * (Number(item.dose) || (item.vaccineId ? normalizeVaccineMeta(vaccines.find(v => v.id === item.vaccineId)?.name, '', '', vaccines.find(v => v.id === item.vaccineId) || {}).dose : 0)) || '-'} dosis</td>
                                                         <td className="p-2 border-b text-center"><button type="button" onClick={() => { const n = [...txItems]; n.splice(idx,1); setTxItems(n.length ? n : [{}]); }} className="text-rose-400"><Trash2 className="w-4 h-4" /></button></td>
                                                     </tr>
                                                 ))}
