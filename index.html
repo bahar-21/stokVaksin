@@ -500,18 +500,18 @@
                 let reportText = '';
                 reportGroups.forEach((group, groupIndex) => {
                     const isMasuk = group.type === 'masuk';
-                    reportText += `${isMasuk ? 'VAKSIN MASUK' : 'VAKSIN KELUAR'}\n`;
-                    reportText += `Tanggal : ${date}\n`;
-                    reportText += `${isMasuk ? 'Sumber' : 'Tujuan'} : ${group.sourceOrFor}\n`;
+                    reportText += `*${isMasuk ? 'VAKSIN MASUK' : 'VAKSIN KELUAR'}*\n`;
+                    reportText += `*Tanggal : ${date}*\n`;
+                    reportText += `*${isMasuk ? 'Sumber' : 'Tujuan'} : ${group.sourceOrFor}*\n`;
                     reportText += `Rincian Vaksin :\n`;
 
                     group.items.forEach((tx, index) => {
                         const meta = normalizeVaccineMeta(tx.vaccineName, tx.dose, tx.unit);
-                        const totalDoses = (Number(tx.qty) || 0) * (Number(meta.dose) || 0);
                         const balance = balanceByTransactionId.get(tx.id) ?? 0;
-                        reportText += `${index + 1}. ${tx.vaccineName} (${tx.batchNo || '-'} / ${tx.expireDate || '-'})\n`;
-                        reportText += `   ${tx.qty} ${meta.unit} / ${totalDoses} dosis\n`;
+                        reportText += `*${index + 1}. ${tx.vaccineName} - ${tx.qty} ${meta.unit}*\n`;
+                        reportText += `   (${tx.batchNo || '-'} / ${tx.expireDate || '-'})\n`;
                         reportText += `   Sisa Stok : ${balance} ${meta.unit}\n`;
+                        if (index < group.items.length - 1) reportText += '\n';
                     });
 
                     if (groupIndex < reportGroups.length - 1) reportText += '\n';
