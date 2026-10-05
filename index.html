@@ -85,6 +85,49 @@
             }
         };
 
+        // Ganti SELURUH isi store dengan data baru (hapus data lama + simpan data baru dalam 1 transaksi)
+        const replaceLocal = async (storeName, data) => {
+            const db = await initDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, "readwrite");
+                const store = tx.objectStore(storeName);
+                store.clear();
+                data.forEach(item => store.put(item));
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(tx.error);
+            });
+        };
+
+        // ---- Antrean kirim (outbox): data yang gagal terkirim ke cloud disimpan di sini lalu dicoba lagi otomatis
+        const OUTBOX_KEY = 'vaxtrack_outbox_v1';
+        const loadOutbox = () => { try { return JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]'); } catch (e) { return []; } };
+        const saveOutbox = (list) => { try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(list)); } catch (e) {} };
+
+        // Kirim satu data ke cloud, baca respons server. Return { ok, lotId?, error? }
+        const postToCloud = async (payload) => {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 30000);
+            try {
+                const res = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload),
+                    signal: ctrl.signal
+                });
+                const text = await res.text();
+                let json = null;
+                try { json = JSON.parse(text); } catch (e) {}
+                if (json && typeof json === 'object') return json.ok ? json : { ok: false, error: json.error || 'Server menolak data' };
+                if (/^\s*success/i.test(text)) return { ok: true };   // kompatibel dengan Code.gs lama
+                return { ok: false, error: text.slice(0, 120) };
+            } catch (e) {
+                return { ok: false, error: String(e) };
+            } finally {
+                clearTimeout(timer);
+            }
+        };
+
         const getFromLocal = async (storeName) => {
             return new Promise((resolve) => {
                 dbOp(storeName, "readonly", s => s.getAll()).then(resolve);
@@ -167,7 +210,13 @@
         function App() {
             const [activeTab, setActiveTab] = useState('stock');
             const [toast, setToast] = useState(null);
-            const [isSyncing, setIsSyncing] = useState(false);
+            const [isSyncing, setIsSyncingState] = useState(false);
+            const syncingRef = useRef(false);
+            const lastSyncRef = useRef(0);
+            const modalOpenRef = useRef(false);
+            const setIsSyncing = (v) => { syncingRef.current = v; setIsSyncingState(v); };
+            const [pendingCount, setPendingCount] = useState(() => loadOutbox().length);
+            const [isInitialLoading, setIsInitialLoading] = useState(true);
             const fileInputRef = useRef(null);
 
             const [vaccines, setVaccines] = useState([]);
@@ -194,6 +243,8 @@
             const [showAllHistory, setShowAllHistory] = useState(false);
             const [historySort, setHistorySort] = useState('dateDesc');
             const [historyPage, setHistoryPage] = useState(1);
+
+            modalOpenRef.current = isTxModalOpen || isVaxModalOpen || isCsvPreviewOpen;
 
             const showToast = (message, type = 'error') => {
                 setToast({ message, type });
@@ -260,17 +311,29 @@
             // ==========================================
             // SYNC ENGINE
             // ==========================================
+            const flushOutbox = async () => {
+                const queue = loadOutbox();
+                if (queue.length === 0) return true;
+                const remaining = [];
+                for (let i = 0; i < queue.length; i++) {
+                    const r = await postToCloud(queue[i]);
+                    if (!r.ok) { remaining.push(...queue.slice(i)); break; }  // berhenti di yang gagal agar urutan terjaga
+                }
+                saveOutbox(remaining);
+                setPendingCount(remaining.length);
+                return remaining.length === 0;
+            };
+
             const syncFromCloud = async (silent = false) => {
                 setIsSyncing(true);
                 try {
+                    await flushOutbox();
                     const resMaster = await fetch(`${GAS_URL}?sheet=Master`);
                     const dataMaster = await resMaster.json();
                     const masterFormatted = dataMaster.map(item => ({
                         id: item.idvaksin || item.namavaksin.toLowerCase().replace(/\s+/g, ''), 
                         name: item.namavaksin, category: item.kategori, minStock: Number(item.batasminimum)
                     }));
-                    await saveToLocal("master", masterFormatted);
-                    setVaccines(masterFormatted);
 
                     const resMasuk = await fetch(`${GAS_URL}?sheet=Masuk`);
                     const dataMasuk = await resMasuk.json();
@@ -300,39 +363,77 @@
                     }));
 
                     const allTxs = [...masukFormatted, ...keluarFormatted];
-                    await saveToLocal("transactions", allTxs);
+
+                    // Data yang belum berhasil terkirim tetap ditampilkan (tidak hilang saat data lokal diganti)
+                    loadOutbox().forEach(p => {
+                        if (p.action === 'addMaster') {
+                            if (!masterFormatted.some(m => m.id === p.id)) masterFormatted.push({ id: p.id, name: p.name, category: p.category, minStock: Number(p.minStock) });
+                        } else if ((p.type === 'masuk' || p.type === 'keluar') && !allTxs.some(t => t.id === p.id)) {
+                            allTxs.push(p);
+                        }
+                    });
+
+                    // Semua data cloud berhasil diambil -> baru hapus data lama di penyimpanan internal & ganti dengan data baru
+                    await replaceLocal("master", masterFormatted);
+                    await replaceLocal("transactions", allTxs);
+                    setVaccines(masterFormatted);
                     setTransactions(allTxs);
 
+                    lastSyncRef.current = Date.now();
                     if (!silent) showToast('Data sinkron dengan Cloud!', 'success');
+                    setIsSyncing(false);
+                    return true;
                 } catch (e) {
+                    // Gagal (offline/error): data lokal TIDAK disentuh
                     if (!silent) showToast('Gagal sinkronisasi Cloud', 'error');
                 }
                 setIsSyncing(false);
+                return false;
             };
 
+            // Kirim ke cloud. Jika gagal, data masuk antrean & dicoba lagi otomatis. Return hasil dari server.
             const syncToCloud = async (payload) => {
-                try {
-                    await fetch(GAS_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                } catch (e) { console.error("Cloud Sync Error:", e); }
+                const result = await postToCloud(payload);
+                if (!result.ok) {
+                    saveOutbox([...loadOutbox(), payload]);
+                    setPendingCount(loadOutbox().length);
+                }
+                return result;
             };
 
             useEffect(() => {
                 const loadInitialData = async () => {
-                    const localMaster = await getFromLocal("master");
-                    const localTxs = await getFromLocal("transactions");
-                    if (localMaster.length === 0 || localTxs.length === 0) {
-                        await syncFromCloud();
-                    } else {
-                        setVaccines(localMaster);
-                        setTransactions(localTxs);
+                    // Saat aplikasi dibuka: selalu ambil dari database (cloud) lebih dulu
+                    const ok = await syncFromCloud(true);
+                    if (!ok) {
+                        // Tidak bisa terhubung ke cloud -> pakai data tersimpan (offline) dan beri peringatan
+                        const localMaster = await getFromLocal("master");
+                        const localTxs = await getFromLocal("transactions");
+                        setVaccines(localMaster || []);
+                        setTransactions(localTxs || []);
+                        showToast('Tidak bisa terhubung ke Cloud. Menampilkan data offline terakhir.', 'error');
                     }
+                    setIsInitialLoading(false);
                 };
                 loadInitialData();
+            }, []);
+
+            // Sinkron otomatis: saat aplikasi kembali dibuka/aktif, saat internet kembali, dan tiap 2 menit
+            useEffect(() => {
+                const autoSync = () => {
+                    if (document.visibilityState !== 'visible') return;
+                    if (syncingRef.current || modalOpenRef.current) return;
+                    if (Date.now() - lastSyncRef.current < 15000) return;
+                    syncFromCloud(true);
+                };
+                document.addEventListener('visibilitychange', autoSync);
+                window.addEventListener('online', autoSync);
+                const timer = setInterval(autoSync, 120000);
+                return () => {
+                    document.removeEventListener('visibilitychange', autoSync);
+                    window.removeEventListener('online', autoSync);
+                    clearInterval(timer);
+                };
             }, []);
 
             // ==========================================
@@ -604,6 +705,7 @@
                 const newTxs = [];
                 const currentSessionIds = [];
                 let errorCount = 0;
+                let failedCount = 0;
                 for (let item of csvPreviewItems) {
                     const vax = vaccines.find(v => v.name.toLowerCase() === item.vaxName.toLowerCase());
                     if (!vax) { errorCount++; continue; }
@@ -616,7 +718,9 @@
                         producer: item.producer, batchNo: item.batchNo, expireDate: item.expireDate,
                         dose: csvMeta.dose, unit: csvMeta.unit, qty: Number(item.qty), notes: 'Imported via CSV'
                     };
-                    await syncToCloud(transactionData);
+                    const r = await syncToCloud(transactionData);
+                    if (!r.ok) failedCount++;
+                    else if (r.lotId && r.lotId !== transactionData.lotId) transactionData.lotId = r.lotId;
                     newTxs.push(transactionData);
                 }
                 if (newTxs.length > 0) {
@@ -626,7 +730,8 @@
                 setIsCsvPreviewOpen(false);
                 setIsSyncing(false);
                 if (errorCount > 0) showToast(`${errorCount} vaksin tidak ditemukan di Master`, 'error');
-                showToast(`Berhasil mengimpor ${newTxs.length} data!`, 'success');
+                if (failedCount > 0) showToast(`${failedCount} data tersimpan di perangkat tapi belum terkirim ke Cloud. Akan dicoba lagi otomatis.`, 'error');
+                else showToast(`Berhasil mengimpor ${newTxs.length} data!`, 'success');
             };
 
             const handleAddVaccine = async (e) => {
@@ -634,12 +739,13 @@
                 if (!vaxForm.name) return;
                 const vaxId = vaxForm.name.toLowerCase().replace(/\s+/g, '');
                 const newVax = { id: vaxId, name: vaxForm.name, category: vaxForm.category, minStock: Number(vaxForm.minStock) };
-                await syncToCloud({ action: 'addMaster', ...newVax });
+                const rv = await syncToCloud({ action: 'addMaster', ...newVax });
                 await saveToLocal("master", newVax);
                 setVaccines(mergeUnique(vaccines, [newVax]));
                 setIsVaxModalOpen(false);
                 setVaxForm({ name: '', category: 'Vaksin Wajib', minStock: 10 });
-                showToast('Jenis vaksin disimpan!', 'success');
+                if (rv.ok) showToast('Jenis vaksin disimpan!', 'success');
+                else showToast('Tersimpan di perangkat, belum terkirim ke Cloud. Akan dicoba lagi otomatis.', 'error');
             };
 
             const handleSaveTransactions = async (e) => {
@@ -651,6 +757,7 @@
                 setIsSyncing(true);
                 const newTxs = [];
                 const currentSessionIds = [];
+                let failedCount = 0;
                 for (let item of txItems) {
                     if (!item.vaccineId || !item.qty) continue;
                     const vax = vaccines.find(v => v.id === item.vaccineId);
@@ -663,8 +770,7 @@
                         producer = item.producer || '-'; batchNo = item.batchNo || '-'; expireDate = item.expireDate || '-';
                     } else {
                         lotId = item.lotId;
-                        const exitTxsForLot = transactions.filter(t => t.lotId === lotId && t.type === 'keluar');
-                        txId = `${lotId}-${exitTxsForLot.length + 1}`;
+                        txId = `TX-K-${Date.now()}-${Math.floor(Math.random() * 100000)}`;  // unik, tidak bisa bentrok antar pengguna
                         const sourceTx = transactions.find(t => t.lotId === lotId && t.type === 'masuk');
                         if (sourceTx) { producer = sourceTx.producer; batchNo = sourceTx.batchNo; expireDate = sourceTx.expireDate; }
                     }
@@ -679,7 +785,9 @@
                         dose: meta.dose, unit: meta.unit, qty: Number(item.qty), notes: item.notes || ''
                     };
                     newTxs.push(transactionData);
-                    await syncToCloud(transactionData);
+                    const r = await syncToCloud(transactionData);
+                    if (!r.ok) failedCount++;
+                    else if (r.lotId && r.lotId !== transactionData.lotId) transactionData.lotId = r.lotId;  // lot ID final dari server
                 }
                 if (newTxs.length === 0) { setIsSyncing(false); showToast('Mohon isi minimal satu jenis vaksin!'); return; }
                 await saveToLocal("transactions", newTxs);
@@ -688,7 +796,8 @@
                 setTxItems([{}]);
                 setTxHeader({ date: new Date().toISOString().split('T')[0], sourceOrFor: '' });
                 setIsSyncing(false);
-                showToast('Berhasil disimpan & Sync Cloud!', 'success');
+                if (failedCount > 0) showToast(`${failedCount} data tersimpan di perangkat tapi belum terkirim ke Cloud. Akan dicoba lagi otomatis.`, 'error');
+                else showToast('Berhasil disimpan & Sync Cloud!', 'success');
             };
 
             // Urutan vaksin khusus pada halaman Stok
@@ -757,6 +866,11 @@
                                     <button onClick={() => syncFromCloud()} disabled={isSyncing} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition" title="Sync Now">
                                         <RefreshCcw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
                                     </button>
+                                    {pendingCount > 0 && (
+                                        <button onClick={() => syncFromCloud()} disabled={isSyncing} className="text-[10px] bg-amber-400 text-amber-900 font-bold px-2 py-1 rounded-full" title="Ketuk untuk kirim ulang">
+                                            {pendingCount} belum terkirim
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                             <button onClick={() => setIsTxModalOpen(true)} className="hidden sm:flex items-center space-x-2 bg-white text-emerald-700 hover:bg-emerald-50 px-4 py-2 rounded-xl font-medium text-sm shadow transition">
@@ -765,6 +879,13 @@
                             </button>
                         </div>
                     </header>
+
+                    {isInitialLoading && (
+                        <div className="fixed inset-0 z-[60] bg-white/90 flex flex-col items-center justify-center">
+                            <RefreshCcw className="w-8 h-8 text-emerald-600 animate-spin" />
+                            <p className="mt-3 text-sm font-semibold text-slate-600">Mengambil data stok dari database...</p>
+                        </div>
+                    )}
 
                     {toast && <div className={`fixed top-16 right-4 z-50 p-4 rounded-xl shadow-xl text-white text-xs font-semibold ${toast.type === 'error' ? 'bg-rose-600' : 'bg-emerald-600'}`}>{toast.message}</div>}
 
